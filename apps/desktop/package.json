@@ -1,0 +1,38 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Tauri desktop-shell proof of concept over the shipped DeepSeek Harness Web Host",
+  "version": "0.1.0-rc.5",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop"
+  },
+  "type": "module",
+  "files": [
+    "src-tauri/Cargo.lock",
+    "src-tauri/Cargo.toml",
+    "src-tauri/build.rs",
+    "src-tauri/icons",
+    "src-tauri/src",
+    "src-tauri/tauri.conf.json",
+    "static",
+    "README.md",
+    "README.zh.md",
+    "README.i18n.yaml"
+  ],
+  "scripts": {
+    "prepare:host": "pnpm --dir ../.. run build",
+    "dev": "pnpm run prepare:host && tauri dev",
+    "dev:prepared": "tauri dev",
+    "build": "pnpm run prepare:host && tauri build --no-bundle",
+    "check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

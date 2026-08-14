@@ -726,6 +726,14 @@
         "react-dom"
       ]
     },
+    "apps/desktop": {
+      "entry": [
+        "static/loading.js"
+      ],
+      "project": [
+        "static/**/*.js"
+      ]
+    },
     "apps/cli": {
       "entry": [
         "tests/**/*.spec.ts",
