@@ -95,9 +95,9 @@ client intent → existing Host API/tool → Host policy and permission → Rust
 
 ### PoC 证据与限制
 
-提交的 PoC 实现第 1–3 步和第 5 步的 Windows 打包范围。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` 资源 URL，并等待私有协议的 ready 帧后再导航。`DSH-IPC/1` 行帧通过受监督 stdio 承载 fetch 形式的请求/响应、流、取消、关闭和致命错误消息。Node adapter 通过 Connection 受信任的同进程 Fetch 入口分发，因此桌面 RPC 不会绕行回环 HTTP。Rust 校验传输字段、关联待处理请求、把流事件定向到所属窗口、限制活动 route、忽略已取消请求的迟到响应，并在窗口销毁时取消窗口所属流。客户端 Connection 插件只为壳层标记的 WebView 选择 `DesktopApiClient`；Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 以有界客户端 inbox 承载两条下行流。Node stdout 在写入下一帧前服从流背压。Tauri 应用 manifest 仅为目录探针和两个 IPC command 生成权限；主窗口 capability 向本地内容和受导航围栏约束的回环 Web UI 授予这些权限。
+提交的 PoC 实现第 1–3 步和第 5 步的 Windows 打包范围。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` 资源 URL，并等待私有协议的 ready 帧后再导航。`DSH-IPC/1` 行帧通过受监督 stdio 承载 fetch 形式的请求/响应、流、取消、关闭和致命错误消息。Node adapter 通过 Connection 受信任的同进程 Fetch 入口分发，因此桌面 RPC 不会绕行回环 HTTP，也不会经过浏览器 HTTP 信任 fence；网络请求仍保留该 fence。Rust 校验传输字段、关联待处理请求、把流事件定向到所属窗口、限制活动 route、忽略已取消请求的迟到响应，并在窗口销毁时取消窗口所属流。客户端 Connection 插件只为壳层标记的 WebView 选择 `DesktopApiClient`；Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 以有界客户端 inbox 承载两条下行流。Node stdout 在写入下一帧前服从流背压。Tauri 应用 manifest 仅为目录探针和两个 IPC command 生成权限；主窗口 capability 向本地内容和受导航围栏约束的回环 Web UI 授予这些权限。
 
-Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时发送分帧关闭请求，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树；stdin EOF 仍作为协议损坏时的兜底。Windows release 构建把固定 Node 可执行文件和生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。壳层在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。聚焦 TypeScript 与 Rust 测试覆盖帧拒绝、载体选择、同进程分发、URL 与导航授权、取消记录、协作退出和强制清理后代。
+Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时发送分帧关闭请求，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树；stdin EOF 仍作为协议损坏时的兜底。Windows release 构建把固定 Node 可执行文件和生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。壳层在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。聚焦 TypeScript 与 Rust 测试覆盖帧拒绝、载体选择、无需 HTTP 信任头的特权同进程分发、URL 与导航授权、取消记录、协作退出和强制清理后代。
 
 PoC 仍通过回环 HTTP 提供应用入口和动态客户端 bundle，并把 Web HTTP/WebSocket 载体保留为对照路径。自定义 bundle 协议、不含 `dsh-host-webserver` 的 release 组合、跨平台打包和经过 Host 策略的原生选择器仍待完成。加载页选择器只是证据，尚未经过 Host 文件系统策略。
 

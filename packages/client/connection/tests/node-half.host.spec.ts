@@ -3,7 +3,7 @@ import { EventEmitter, once } from 'node:events'
 import { createServer, request as httpRequest } from 'node:http'
 import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -343,6 +343,43 @@ describe('connection node half', () => {
     await route.handler(fakePost({ host: 'harness.example' }, '/api/goals/create', request), loopbackOnly.response)
     expect(loopbackOnly.state.status).toBe(403)
     await removeLoopback()
+    await fiber.dispose()
+  })
+
+  it('dispatches privileged API methods through trusted same-process fetch without HTTP trust headers', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    const mutate = vi.fn(async (request: { rpcId: string }) => ({
+      rpcId: request.rpcId,
+      result: { ok: true as const, value: { ns: 'ui-onboarding' } },
+    }))
+    ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    ctx.provide('apiProxy', { settings: { mutate } } as unknown as ApiProxy)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const connection = ctx.get('connection') as HostConnectionHandle
+    const request: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('settings-local'),
+      method: 'settings.mutate',
+      payload: {
+        ns: 'ui-onboarding',
+        ops: [{ op: 'set', path: ['welcomeNoticeVersion'], value: '2026-08-13.1' }],
+      },
+    }
+
+    const response = await connection.fetch(new Request('http://127.0.0.1/api/settings.mutate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      rpcId: 'settings-local',
+      result: { ok: true, value: { ns: 'ui-onboarding' } },
+    })
+    expect(mutate).toHaveBeenCalledOnce()
     await fiber.dispose()
   })
 

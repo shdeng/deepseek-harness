@@ -42,7 +42,7 @@ declare module '@deepseek-ai/cordis' {
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
-  private readonly fetchHandlers = new Map<string, FetchHandler>()
+  private readonly localFetchHandlers = new Map<string, FetchHandler>()
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -66,19 +66,21 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /**
    * Compose one shared-channel Fetch handler from its interceptor and fallback.
    * @param channel - shared channel mounted by Connection.
-   * @param fallback - handler for endpoints not claimed by the interceptor.
+   * @param networkFallback - HTTP handler for endpoints not claimed by the interceptor.
+   * @param localFallback - trusted same-process handler, without browser trust fences.
    * @returns Fetch handler that selects exactly one target for each request.
    */
   createSharedFetchHandler(
     channel: '/api',
-    fallback: FetchHandler,
+    networkFallback: FetchHandler,
+    localFallback: FetchHandler,
   ): FetchHandler {
-    const handler: FetchHandler = {
+    const networkHandler: FetchHandler = {
       fetch: (request) => {
         const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
         const interceptor = this.interceptors.get(channel)
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
-          return fallback.fetch(request)
+          return networkFallback.fetch(request)
         }
         if (interceptor.options.authority === 'loopback' && !isTrustedApiRequest(request, [])) {
           return Promise.resolve(new Response('forbidden', { status: 403 }))
@@ -86,15 +88,23 @@ export class HostConnectionService extends Service implements HostConnectionHand
         return interceptor.fetchHandler.fetch(request)
       },
     }
-    this.fetchHandlers.set(channel, handler)
-    return handler
+    this.localFetchHandlers.set(channel, {
+      fetch: (request) => {
+        const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
+        const interceptor = this.interceptors.get(channel)
+        return endpoint !== undefined && interceptor?.matches(endpoint) === true
+          ? interceptor.fetchHandler.fetch(request)
+          : localFallback.fetch(request)
+      },
+    })
+    return networkHandler
   }
 
   async fetch(request: Request): Promise<Response> {
     const pathname = new URL(request.url).pathname
     const separator = pathname.indexOf('/', 1)
     const channel = separator === -1 ? pathname : pathname.slice(0, separator)
-    const handler = this.fetchHandlers.get(channel)
+    const handler = this.localFetchHandlers.get(channel)
     return handler === undefined
       ? new Response('not found', { status: 404 })
       : handler.fetch(request)
@@ -124,9 +134,9 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return owner.effect(
       () => {
         const disposeRoute = owner.webServer.register(route)
-        this.fetchHandlers.set(channel, fetchHandler)
+        this.localFetchHandlers.set(channel, fetchHandler)
         return () => {
-          this.fetchHandlers.delete(channel)
+          this.localFetchHandlers.delete(channel)
           disposeRoute()
         }
       },
