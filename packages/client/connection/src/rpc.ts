@@ -56,6 +56,13 @@ export interface HostConnectionRpc {
 export interface HostConnectionHandle {
   /** Generic RPC channel registry. */
   readonly rpc: HostConnectionRpc
+  /**
+   * Dispatch a trusted same-process request through the same logical handlers
+   * used by the HTTP adapter.
+   * @param request - Request whose pathname selects the registered channel.
+   * @returns the logical handler response, or 404 when no channel owns the path.
+   */
+  fetch(request: Request): Promise<Response>
 }
 
 /** Client caller for logical RPC channels carried by the current transport. */

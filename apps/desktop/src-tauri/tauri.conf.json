@@ -10,7 +10,24 @@
     "withGlobalTauri": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost",
+      "capabilities": [
+        {
+          "identifier": "desktop-main",
+          "description": "Allows the navigation-fenced loopback Web UI to use the desktop shell IPC commands and events.",
+          "windows": ["main"],
+          "local": true,
+          "remote": {
+            "urls": ["http://127.0.0.1:*/*"]
+          },
+          "permissions": [
+            "core:default",
+            "allow-desktop-pick-directory",
+            "allow-desktop-ipc-request",
+            "allow-desktop-ipc-cancel"
+          ]
+        }
+      ]
     }
   },
   "bundle": {

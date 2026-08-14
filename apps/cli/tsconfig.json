@@ -33,6 +33,9 @@
       "path": "../../packages/bundle/web-app"
     },
     {
+      "path": "../../packages/client/connection/tsconfig.host.json"
+    },
+    {
       "path": "../../packages/host/apiproxy"
     },
     {

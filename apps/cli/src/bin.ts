@@ -29,12 +29,18 @@ const invocation = parseDshArgs(process.argv.slice(2), readVersion())
 switch (invocation.mode) {
   case 'profile': {
     const { runProfile } = await import('./profile-boot.ts')
-    await runProfile({
+    const runtime = await runProfile({
       environment: loadLayeredEnv('dsh'),
       profile: invocation.profile,
       patchFiles: invocation.patches,
       args: invocation.args,
     })
+    const desktopSidecar = process.env.DSH_DESKTOP_SIDECAR
+    if (desktopSidecar !== undefined) {
+      if (desktopSidecar !== '1') throw new Error('DSH_DESKTOP_SIDECAR must be "1" when set')
+      const { runDesktopSidecar } = await import('./desktop-sidecar.ts')
+      await runDesktopSidecar(runtime)
+    }
     break
   }
   case 'plugin': {

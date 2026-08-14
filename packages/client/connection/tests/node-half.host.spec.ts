@@ -250,11 +250,20 @@ describe('connection node half', () => {
       payload: { args: { agentId: 'agent-1' } },
     }])
 
+    const local = await connection.fetch(new Request('http://127.0.0.1/rpc/goals/create', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...request, rpcId: 'rpc-local' }),
+    }))
+    expect(local.status).toBe(200)
+    expect(await local.json()).toMatchObject({ rpcId: 'rpc-local', result: { ok: true } })
+
     expect(() => connection.rpc.handle('/rpc', async () => ({ ok: true, value: null }), {
       authority: 'trusted-host',
     })).toThrow(/duplicate route/)
     await remove()
     expect(routes.map(candidate => candidate.path)).toEqual([API_PATH])
+    expect((await connection.fetch(new Request('http://127.0.0.1/rpc/goals/create'))).status).toBe(404)
     await fiber.dispose()
     expect(routes).toHaveLength(0)
   })

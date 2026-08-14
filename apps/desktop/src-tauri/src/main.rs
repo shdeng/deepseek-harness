@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ipc;
+
 use std::{
     collections::VecDeque,
     env,
@@ -15,7 +17,8 @@ use std::{
 };
 
 use command_group::{CommandGroup, GroupChild};
-use tauri::{Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use ipc::{DesktopRequest, ProtocolLine, SidecarBridge};
+use tauri::{Manager, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 const HOST_URL_PREFIX: &str = "dsh web: ";
@@ -24,6 +27,7 @@ const DEFAULT_HOST_SHUTDOWN_GRACE_MS: u64 = 7_000;
 const MAX_HOST_SHUTDOWN_GRACE_MS: u64 = 60_000;
 const HOST_SHUTDOWN_GRACE_ENV: &str = "DSH_DESKTOP_SHUTDOWN_GRACE_MS";
 const SUPERVISED_STDIN_ENV: &str = "DSH_SHUTDOWN_ON_STDIN_EOF";
+const DESKTOP_SIDECAR_ENV: &str = "DSH_DESKTOP_SIDECAR";
 
 #[derive(Debug)]
 struct HostLaunch {
@@ -109,6 +113,7 @@ impl HostLaunch {
             .args(["web", "--host", "127.0.0.1", "--port", "0"])
             .current_dir(&self.cwd)
             .env(SUPERVISED_STDIN_ENV, "1")
+            .env(DESKTOP_SIDECAR_ENV, "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -176,8 +181,14 @@ impl HostProcess {
         wait_result
     }
 
-    fn shutdown(&mut self) -> Result<bool, String> {
-        drop(self.child.inner().stdin.take());
+    fn shutdown(&mut self, bridge: Option<&SidecarBridge>) -> Result<bool, String> {
+        if let Some(bridge) = bridge {
+            if bridge.request_shutdown().is_err() {
+                bridge.close_writer();
+            }
+        } else {
+            drop(self.child.inner().stdin.take());
+        }
         let deadline = Instant::now() + self.shutdown_grace;
         loop {
             match self.try_wait_leader() {
@@ -203,6 +214,7 @@ impl HostProcess {
             }
         }
 
+        bridge.inspect(|bridge| bridge.close_writer());
         self.force_terminate()?;
         Ok(true)
     }
@@ -283,9 +295,12 @@ impl NavigationFence {
 struct HostState {
     child: Mutex<Option<HostProcess>>,
     ready: AtomicBool,
+    protocol_ready: AtomicBool,
     shutting_down: AtomicBool,
     stderr_tail: Mutex<VecDeque<String>>,
     navigation: Arc<NavigationFence>,
+    pending_url: Mutex<Option<Url>>,
+    bridge: SidecarBridge,
 }
 
 impl HostState {
@@ -293,9 +308,12 @@ impl HostState {
         Self {
             child: Mutex::new(None),
             ready: AtomicBool::new(false),
+            protocol_ready: AtomicBool::new(false),
             shutting_down: AtomicBool::new(false),
             stderr_tail: Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)),
             navigation,
+            pending_url: Mutex::new(None),
+            bridge: SidecarBridge::new(),
         }
     }
 
@@ -310,6 +328,11 @@ impl HostState {
             let _ = child.force_terminate();
             return Err("Node Host stderr pipe was not created".to_owned());
         };
+        let Some(stdin) = child.child.inner().stdin.take() else {
+            let _ = child.force_terminate();
+            return Err("Node Host stdin pipe was not created".to_owned());
+        };
+        self.bridge.install_writer(stdin);
         *self.child.lock().expect("Host child lock poisoned") = Some(child);
 
         let stdout_state = Arc::clone(self);
@@ -318,6 +341,18 @@ impl HostState {
             for line in BufReader::new(stdout).lines() {
                 match line {
                     Ok(line) => {
+                        match stdout_state.bridge.handle_line(&stdout_app, &line) {
+                            Ok(ProtocolLine::Ready) => {
+                                stdout_state.publish_protocol_ready(&stdout_app);
+                                continue;
+                            }
+                            Ok(ProtocolLine::Handled) => continue,
+                            Ok(ProtocolLine::NotProtocol) => {}
+                            Err(error) => {
+                                report_status(&stdout_app, &error);
+                                break;
+                            }
+                        }
                         println!("[dsh-host] {line}");
                         if let Some(result) = parse_host_url(&line) {
                             match result {
@@ -360,11 +395,36 @@ impl HostState {
     }
 
     fn publish_host_url(&self, app: &tauri::AppHandle, url: Url) {
-        if self.ready.swap(true, Ordering::AcqRel) {
+        *self.pending_url.lock().expect("Host URL lock poisoned") = Some(url);
+        self.navigate_when_ready(app);
+    }
+
+    fn publish_protocol_ready(&self, app: &tauri::AppHandle) {
+        self.protocol_ready.store(true, Ordering::Release);
+        self.navigate_when_ready(app);
+    }
+
+    fn navigate_when_ready(&self, app: &tauri::AppHandle) {
+        if !self.protocol_ready.load(Ordering::Acquire) || self.ready.load(Ordering::Acquire) {
             return;
         }
-        let port = url.port().expect("validated Host URL has a port");
-        self.navigation.publish(port);
+        let url = self
+            .pending_url
+            .lock()
+            .expect("Host URL lock poisoned")
+            .clone();
+        let Some(url) = url else {
+            return;
+        };
+        if self
+            .ready
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        self.navigation
+            .publish(url.port().expect("validated Host URL has a port"));
         let Some(window) = app.get_webview_window("main") else {
             report_status(
                 app,
@@ -408,6 +468,8 @@ impl HostState {
                 continue;
             };
             if !self.shutting_down.load(Ordering::Acquire) {
+                self.bridge
+                    .fail_all(&format!("Node Host exited unexpectedly ({status})"));
                 let cleanup_error = {
                     let mut child = self.child.lock().expect("Host child lock poisoned");
                     child
@@ -447,7 +509,7 @@ impl HostState {
         let Some(mut child) = child else {
             return;
         };
-        match child.shutdown() {
+        match child.shutdown(Some(&self.bridge)) {
             Ok(true) => eprintln!(
                 "[dsh-desktop] Node Host did not quiesce within {} ms; terminated its process tree",
                 child.shutdown_grace.as_millis()
@@ -455,7 +517,26 @@ impl HostState {
             Ok(false) => {}
             Err(error) => eprintln!("[dsh-desktop] {error}"),
         }
+        self.bridge.close_writer();
+        self.bridge.fail_all("desktop shell is shutting down");
     }
+}
+
+#[tauri::command]
+async fn desktop_ipc_request(
+    window: WebviewWindow,
+    state: State<'_, Arc<HostState>>,
+    request: DesktopRequest,
+) -> Result<serde_json::Value, String> {
+    state
+        .bridge
+        .request(request, window.label().to_owned())
+        .await
+}
+
+#[tauri::command]
+fn desktop_ipc_cancel(state: State<'_, Arc<HostState>>, id: String) -> Result<(), String> {
+    state.bridge.cancel(&id)
 }
 
 fn absolute_path(path: PathBuf, base: &Path) -> PathBuf {
@@ -517,6 +598,7 @@ fn create_window(
     navigation: Arc<NavigationFence>,
 ) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+        .initialization_script("window.__DSH_DESKTOP_IPC__ = true;")
         .title("DeepSeek Harness Desktop")
         .inner_size(1280.0, 820.0)
         .min_inner_size(900.0, 640.0)
@@ -533,7 +615,11 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::clone(&host))
-        .invoke_handler(tauri::generate_handler![desktop_pick_directory])
+        .invoke_handler(tauri::generate_handler![
+            desktop_pick_directory,
+            desktop_ipc_request,
+            desktop_ipc_cancel
+        ])
         .setup(move |app| {
             create_window(app.handle(), Arc::clone(&setup_navigation))?;
             if let Err(error) = setup_host.start(app.handle().clone()) {
@@ -544,10 +630,18 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to build the Tauri desktop shell");
 
-    app.run(move |_app, event| {
-        if matches!(event, RunEvent::ExitRequested { .. }) {
-            host.shutdown();
+    app.run(move |_app, event| match event {
+        RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } => {
+            if let Err(error) = host.bridge.cancel_window(&label) {
+                eprintln!("[dsh-desktop] failed to cancel streams for closed window: {error}");
+            }
         }
+        RunEvent::ExitRequested { .. } => host.shutdown(),
+        _ => {}
     });
 }
 
@@ -669,12 +763,53 @@ process.stdin.once('end', () => {
 process.stdout.write('ready\n');
 "#;
         let mut process = spawn_node_fixture(script, &marker, Duration::from_secs(2));
-        assert!(!process.shutdown().expect("fixture shuts down"));
+        assert!(!process.shutdown(None).expect("fixture shuts down"));
         assert_eq!(
             fs::read_to_string(&marker).expect("graceful marker"),
             "graceful"
         );
         fs::remove_file(marker).expect("remove graceful marker");
+    }
+
+    #[test]
+    fn framed_shutdown_allows_graceful_exit() {
+        let marker = test_marker("framed-graceful");
+        let script = r#"
+const fs = require('node:fs');
+const marker = process.argv[1];
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => {
+  input += chunk;
+  const boundary = input.indexOf('\n');
+  if (boundary === -1) return;
+  const line = input.slice(0, boundary);
+  const frame = JSON.parse(line.slice('DSH-IPC/1 '.length));
+  if (frame.kind === 'shutdown') {
+    fs.writeFileSync(marker, 'framed');
+    process.exit(0);
+  }
+});
+process.stdout.write('ready\n');
+"#;
+        let mut process = spawn_node_fixture(script, &marker, Duration::from_secs(2));
+        let bridge = SidecarBridge::new();
+        bridge.install_writer(
+            process
+                .child
+                .inner()
+                .stdin
+                .take()
+                .expect("Node fixture stdin is piped"),
+        );
+        assert!(!process
+            .shutdown(Some(&bridge))
+            .expect("fixture shuts down through a frame"));
+        assert_eq!(
+            fs::read_to_string(&marker).expect("framed marker"),
+            "framed"
+        );
+        fs::remove_file(marker).expect("remove framed marker");
     }
 
     #[test]
@@ -696,7 +831,9 @@ process.stdout.write('ready\n');
 setInterval(() => {}, 60_000);
 "#;
         let mut process = spawn_node_fixture(script, &marker, Duration::from_millis(50));
-        assert!(process.shutdown().expect("fixture process tree shuts down"));
+        assert!(process
+            .shutdown(None)
+            .expect("fixture process tree shuts down"));
         thread::sleep(Duration::from_millis(700));
         assert!(
             !marker.exists(),

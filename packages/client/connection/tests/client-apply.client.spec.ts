@@ -8,10 +8,15 @@ import { apply, type ConnectionHandle } from '../src/client/index.ts'
 import type { RpcMessage } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
 import { FixtureApiClient } from '../src/client/fixture.ts'
+import { DesktopApiClient } from '../src/client/desktop-api-client.ts'
 import { WebApiClient } from '../src/client/web-api-client.ts'
 
 type Win = { location?: { hostname: string; search: string; origin?: string } }
 type WebSocketGlobal = { WebSocket?: typeof WebSocket }
+type DesktopGlobal = {
+  __DSH_DESKTOP_IPC__?: boolean
+  __TAURI__?: unknown
+}
 
 const originalWebSocket = globalThis.WebSocket
 const sockets: FakeWebSocket[] = []
@@ -52,6 +57,8 @@ afterEach(() => {
   sockets.length = 0
   if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
   else globalThis.WebSocket = originalWebSocket
+  delete (globalThis as DesktopGlobal).__DSH_DESKTOP_IPC__
+  delete (globalThis as DesktopGlobal).__TAURI__
 })
 
 async function mount(): Promise<ConnectionHandle> {
@@ -68,6 +75,102 @@ describe('connection client apply', () => {
     const handle = await mount()
     expect(handle.api).toBeInstanceOf(WebApiClient)
     expect(handle.isLoopback).toBe(true)
+  })
+
+  it('selects the Tauri command carrier only for a desktop-marked WebView', async () => {
+    ;(globalThis as Win).location = { hostname: '127.0.0.1', search: '' }
+    ;(globalThis as DesktopGlobal).__DSH_DESKTOP_IPC__ = true
+    ;(globalThis as DesktopGlobal).__TAURI__ = {
+      core: { invoke: vi.fn() },
+      event: { listen: vi.fn() },
+    }
+    const handle = await mount()
+    expect(handle.api).toBeInstanceOf(DesktopApiClient)
+    expect(handle.isLoopback).toBe(true)
+  })
+
+  it('carries desktop generic RPC through a Tauri command without fetch', async () => {
+    ;(globalThis as Win).location = { hostname: '127.0.0.1', search: '', origin: 'http://127.0.0.1:3080' }
+    ;(globalThis as DesktopGlobal).__DSH_DESKTOP_IPC__ = true
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      expect(command).toBe('desktop_ipc_request')
+      const request = args?.request as { body: string }
+      const envelope = JSON.parse(request.body) as { rpcId: string }
+      return {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'server-response',
+          rpcId: envelope.rpcId,
+          result: { ok: true, value: { ref: 'goal-desktop' } },
+        }),
+      }
+    })
+    ;(globalThis as DesktopGlobal).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn() },
+    }
+    const fetch = vi.spyOn(globalThis, 'fetch')
+    const handle = await mount()
+    await expect(handle.rpc.call('/api', 'goals/create', { args: { agentId: 'agent-1' } }))
+      .resolves.toEqual({ ok: true, value: { ref: 'goal-desktop' } })
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(fetch).not.toHaveBeenCalled()
+    fetch.mockRestore()
+  })
+
+  it('carries a desktop downlink through targeted Tauri events and cancels it', async () => {
+    ;(globalThis as Win).location = { hostname: '127.0.0.1', search: '' }
+    ;(globalThis as DesktopGlobal).__DSH_DESKTOP_IPC__ = true
+    let streamId: string | undefined
+    let eventHandler: ((event: { payload: unknown }) => void) | undefined
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === 'desktop_ipc_request') {
+        const request = args?.request as { op: string; id: string }
+        expect(request.op).toBe('stream-open')
+        streamId = request.id
+        queueMicrotask(() => {
+          eventHandler?.({
+            payload: {
+              id: request.id,
+              message: {
+                type: 'server-request',
+                rpcId: 'desktop-stream-rpc',
+                method: 'session/subscribed',
+                payload: { type: 'session/subscribed', sessionId: 'session-desktop', lastSeq: 4 },
+              },
+            },
+          })
+        })
+        return { opened: true }
+      }
+      expect(command).toBe('desktop_ipc_cancel')
+      queueMicrotask(() => { eventHandler?.({ payload: { id: args?.id, end: true } }) })
+    })
+    const unlisten = vi.fn(() => { eventHandler = undefined })
+    ;(globalThis as DesktopGlobal).__TAURI__ = {
+      core: { invoke },
+      event: {
+        listen: vi.fn(async (_event: string, handler: (event: { payload: unknown }) => void) => {
+          eventHandler = handler
+          return unlisten
+        }),
+      },
+    }
+    const client = (await mount()).api as DesktopApiClient
+    const abort = new AbortController()
+    const opened = vi.fn()
+    const iterator = client.events.mux({}, abort.signal, opened)[Symbol.asyncIterator]()
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { rpcId: 'desktop-stream-rpc', payload: { type: 'session/subscribed', lastSeq: 4 } },
+    })
+    expect(opened).toHaveBeenCalledOnce()
+    expect(streamId).toBeDefined()
+    const end = iterator.next()
+    abort.abort()
+    await expect(end).resolves.toMatchObject({ done: true })
+    expect(invoke).toHaveBeenCalledWith('desktop_ipc_cancel', { id: streamId })
+    expect(unlisten).toHaveBeenCalledOnce()
   })
 
   it('selects the fixture client under ?fixture (and with no location at all stays real)', async () => {

@@ -42,6 +42,7 @@ declare module '@deepseek-ai/cordis' {
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
+  private readonly fetchHandlers = new Map<string, FetchHandler>()
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -72,7 +73,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     channel: '/api',
     fallback: FetchHandler,
   ): FetchHandler {
-    return {
+    const handler: FetchHandler = {
       fetch: (request) => {
         const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
         const interceptor = this.interceptors.get(channel)
@@ -85,6 +86,18 @@ export class HostConnectionService extends Service implements HostConnectionHand
         return interceptor.fetchHandler.fetch(request)
       },
     }
+    this.fetchHandlers.set(channel, handler)
+    return handler
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const pathname = new URL(request.url).pathname
+    const separator = pathname.indexOf('/', 1)
+    const channel = separator === -1 ? pathname : pathname.slice(0, separator)
+    const handler = this.fetchHandlers.get(channel)
+    return handler === undefined
+      ? new Response('not found', { status: 404 })
+      : handler.fetch(request)
   }
 
   private register(
@@ -109,7 +122,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
       },
     }
     return owner.effect(
-      () => owner.webServer.register(route),
+      () => {
+        const disposeRoute = owner.webServer.register(route)
+        this.fetchHandlers.set(channel, fetchHandler)
+        return () => {
+          this.fetchHandlers.delete(channel)
+          disposeRoute()
+        }
+      },
       `client-connection: ${channel} rpc channel`,
     )
   }

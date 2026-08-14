@@ -88,15 +88,18 @@ client intent → existing Host API/tool → Host policy and permission → Rust
 
 1. 用 `apps/desktop` 中的回环 PoC 验证复用：Rust 在操作系统进程容器中监督真实的已构建 `dsh web`，只导航到子进程发布的临时端口，通过受监督的 stdin EOF 请求优雅释放，并提供一个原生对话框探针。
 2. 增加私有分帧 Node/Rust 协议和 ready/关闭握手，同时仅把 Web server 保留为对照路径。
-3. 实现桌面 `AbstractApiClient` 载体和 Tauri custom-protocol bundle loader；从桌面 release 组合移除 `dsh-host-webserver`。
-4. 增加打包 Node 与 JavaScript resource、应用数据目录解析，以及针对 PoC 已建立进程树所有权的跨平台打包 smoke test。
-5. 把选定原生 provider 放到现有或新完成的 capability seam 后。每条 seam 都包括 Service Definition、Rust 支持的 provider bridge、Consumer、单元覆盖、组合 e2e 覆盖，以及在行为对产品或模型可见时的 keyless snapshot 覆盖。
+3. 实现桌面 `AbstractApiClient` 载体：Tauri command 承载上行请求，定向 event 承载下行流，回环仍提供应用资源。
+4. 增加 Tauri custom-protocol boot manifest 与 bundle loader；从桌面 release 组合移除 `dsh-host-webserver`。
+5. 增加打包 Node 与 JavaScript resource、应用数据目录解析，以及针对 PoC 已建立进程树所有权的跨平台打包 smoke test。
+6. 把选定原生 provider 放到现有或新完成的 capability seam 后。每条 seam 都包括 Service Definition、Rust 支持的 provider bridge、Consumer、单元覆盖、组合 e2e 覆盖，以及在行为对产品或模型可见时的 keyless snapshot 覆盖。
 
 ### PoC 证据与限制
 
-提交的 PoC 实现第 1 步和第 4 步的 Windows 打包范围。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` ready 行，把导航限制到该端口，捕获 Host 诊断，并检测异常退出。Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时关闭 Host 的受监督 stdin 管道，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树。Windows release 构建把固定 Node 可执行文件和生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。壳层在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。Rust 测试覆盖 URL 拒绝、导航授权、打包资源回退、协作退出和强制清理后代；built-CLI e2e test 证明 stdin EOF 会触发 profile 释放。
+提交的 PoC 实现第 1–3 步和第 5 步的 Windows 打包范围。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` 资源 URL，并等待私有协议的 ready 帧后再导航。`DSH-IPC/1` 行帧通过受监督 stdio 承载 fetch 形式的请求/响应、流、取消、关闭和致命错误消息。Node adapter 通过 Connection 受信任的同进程 Fetch 入口分发，因此桌面 RPC 不会绕行回环 HTTP。Rust 校验传输字段、关联待处理请求、把流事件定向到所属窗口、限制活动 route、忽略已取消请求的迟到响应，并在窗口销毁时取消窗口所属流。客户端 Connection 插件只为壳层标记的 WebView 选择 `DesktopApiClient`；Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 以有界客户端 inbox 承载两条下行流。Node stdout 在写入下一帧前服从流背压。Tauri 应用 manifest 仅为目录探针和两个 IPC command 生成权限；主窗口 capability 向本地内容和受导航围栏约束的回环 Web UI 授予这些权限。
 
-PoC 的回环 HTTP/WebSocket 传输、受监督 stdin 控制通道、仅限 Windows 的未签名打包和加载页目录选择器都是证据，不是生产决策。Stdin EOF 证明了生命周期集成，但不能取代规划中的分帧 sidecar 关闭请求；选择器也尚未经过 Host 文件系统策略。
+Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时发送分帧关闭请求，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树；stdin EOF 仍作为协议损坏时的兜底。Windows release 构建把固定 Node 可执行文件和生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。壳层在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。聚焦 TypeScript 与 Rust 测试覆盖帧拒绝、载体选择、同进程分发、URL 与导航授权、取消记录、协作退出和强制清理后代。
+
+PoC 仍通过回环 HTTP 提供应用入口和动态客户端 bundle，并把 Web HTTP/WebSocket 载体保留为对照路径。自定义 bundle 协议、不含 `dsh-host-webserver` 的 release 组合、跨平台打包和经过 Host 策略的原生选择器仍待完成。加载页选择器只是证据，尚未经过 Host 文件系统策略。
 
 ## 考虑过的替代方案
 

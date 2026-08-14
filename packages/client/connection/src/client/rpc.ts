@@ -6,6 +6,7 @@ import {
   type ClientRequest,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ClientConnectionRpc } from '../rpc.ts'
+import { desktopFetch } from './desktop-api-client.ts'
 import { randomUuid } from './random-uuid.ts'
 
 const INTERNAL_BASE = 'http://dsh.internal'
@@ -17,6 +18,20 @@ const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
  * @returns caller that owns request correlation and response-envelope validation.
  */
 export function createWebConnectionRpc(): ClientConnectionRpc {
+  return createConnectionRpc((input, init) => globalThis.fetch(input, init))
+}
+
+/**
+ * Create the Tauri-backed generic RPC caller.
+ * @returns caller using the desktop command carrier.
+ */
+export function createDesktopConnectionRpc(): ClientConnectionRpc {
+  return createConnectionRpc(desktopFetch)
+}
+
+function createConnectionRpc(
+  fetch: (input: URL, init?: RequestInit) => Promise<Response>,
+): ClientConnectionRpc {
   return {
     async call(channel, endpoint, payload, signal) {
       assertTarget(channel, endpoint)
@@ -27,7 +42,7 @@ export function createWebConnectionRpc(): ClientConnectionRpc {
         method: endpoint,
         payload,
       }
-      const response = await globalThis.fetch(
+      const response = await fetch(
         new URL(`${channel}/${endpoint}`, resolveBase()),
         {
           method: 'POST',
