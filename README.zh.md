@@ -22,7 +22,9 @@ npx @deepseek-ai/dsh web
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
-### 从源码运行
+<a id="run-from-source"></a>
+
+### 从源码运行 Web UI
 
 如需从仓库源码运行：
 
@@ -33,6 +35,19 @@ pnpm install
 pnpm run build
 pnpm dsh web
 ```
+
+### 从源码运行 Desktop App
+
+Desktop App 是一个 Tauri 概念验证：它把现有 Node.js Host 作为子进程启动，并在系统 WebView 中显示同一套 Web UI。运行前请安装 Node.js、pnpm、Rust 和 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。
+
+```sh
+git clone https://github.com/deepseek-ai/deepseek-harness.git
+cd deepseek-harness
+pnpm install
+pnpm desktop:dev
+```
+
+Desktop App 当前是仅从源码运行的开发构建，不是已打包的安装程序。PoC 使用临时回环 HTTP 连接；拟议的 release 架构会改用桌面 IPC 和内置 Node 运行时。详见 [Desktop App 指南](apps/desktop/README.md)与[桌面壳设计](.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md)。
 
 ## 社区与支持
 

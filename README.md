@@ -22,7 +22,9 @@ npx @deepseek-ai/dsh web
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
-### Run from source
+<a id="run-from-source"></a>
+
+### Run the Web UI from source
 
 To run from a repository checkout:
 
@@ -33,6 +35,19 @@ pnpm install
 pnpm run build
 pnpm dsh web
 ```
+
+### Run the Desktop App from source
+
+The Desktop App is a Tauri proof of concept that starts the existing Node.js Host as a child process and displays the same Web UI in the system WebView. Install Node.js, pnpm, Rust, and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/) before running it.
+
+```sh
+git clone https://github.com/deepseek-ai/deepseek-harness.git
+cd deepseek-harness
+pnpm install
+pnpm desktop:dev
+```
+
+The Desktop App is currently a source-only development build, not a packaged installer. The PoC uses an ephemeral loopback HTTP connection; the proposed release architecture replaces it with desktop IPC and a bundled Node runtime. See the [Desktop App guide](apps/desktop/README.md) and [desktop shell design](.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md).
 
 ## Community and support
 
