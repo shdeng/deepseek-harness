@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "release-resources/": ""
+    }
+  }
+}

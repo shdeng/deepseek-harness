@@ -86,17 +86,17 @@ User profiles, sessions, settings, and caches live outside the immutable applica
 
 ### Migration sequence
 
-1. Validate reuse with the loopback PoC in `apps/desktop`: Rust supervises the real built `dsh web`, navigates only to the child-published ephemeral port, and exposes one native dialog probe.
+1. Validate reuse with the loopback PoC in `apps/desktop`: Rust supervises the real built `dsh web` in an operating-system process container, navigates only to the child-published ephemeral port, requests graceful disposal through supervised stdin EOF, and exposes one native dialog probe.
 2. Add a private framed Node/Rust protocol and readiness/shutdown handshake while retaining the Web server only as a comparison path.
 3. Implement the desktop `AbstractApiClient` carrier and Tauri custom-protocol bundle loader; remove `dsh-host-webserver` from desktop release composition.
-4. Add process-tree ownership, packaged Node and JavaScript resources, application-data resolution, and cross-platform packaged smoke tests.
+4. Add packaged Node and JavaScript resources, application-data resolution, and cross-platform packaged smoke tests for the process-tree ownership established by the PoC.
 5. Move selected native providers behind existing or newly completed capability seams. Each seam includes Service Definition, Rust-backed provider bridge, Consumer, unit coverage, assembled e2e coverage, and keyless snapshot coverage when behavior is product- or model-visible.
 
 ### PoC evidence and limits
 
-The checked-in PoC implements step 1. It uses the actual built CLI and Web application, parses the exact `dsh web: http://127.0.0.1:<port>/` readiness line, constrains navigation to that port, captures Host diagnostics, detects unexpected exit, and kills and reaps the direct Node child on shell exit. Rust unit tests cover URL rejection and navigation authorization.
+The checked-in PoC implements step 1 and the Windows packaging slice of step 4. It uses the actual built CLI and Web application, parses the exact `dsh web: http://127.0.0.1:<port>/` readiness line, constrains navigation to that port, captures Host diagnostics, and detects unexpected exit. The Rust shell creates a Unix process group or Windows Job Object before the Host can spawn descendants. Shell exit closes the Host's supervised stdin pipe, waits for the CLI's bounded Cordis disposal, then force-terminates and reaps the whole process tree after a configurable outer grace. Windows release builds carry a fixed Node executable and a production `pnpm deploy` closure as Tauri resources; release preparation materializes workspace links so the artifact does not depend on repository paths. The shell normalizes Windows verbatim resource paths before passing the Host entry to Node and selects packaged resources before development fallbacks. Rust tests cover URL rejection, navigation authorization, packaged-resource fallback, cooperative exit, and forced descendant cleanup; a built-CLI e2e test proves stdin EOF reaches profile disposal.
 
-The PoC's loopback HTTP/WebSocket transport, direct-child termination, development Node discovery, and loading-page directory picker are evidence, not production decisions. In particular, direct-child termination does not prove descendant quiescence, and the picker does not yet pass through Host filesystem policy.
+The PoC's loopback HTTP/WebSocket transport, supervised stdin control channel, Windows-only unsigned packaging, and loading-page directory picker are evidence, not production decisions. Stdin EOF proves lifecycle integration but does not replace the planned framed sidecar shutdown request, and the picker does not yet pass through Host filesystem policy.
 
 ## Alternatives considered
 

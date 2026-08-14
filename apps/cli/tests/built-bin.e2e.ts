@@ -146,6 +146,22 @@ function startProfileLifecycle(fixture: ProfileLifecycleFixture, args: readonly 
   })
 }
 
+function startSupervisedProfileLifecycle(fixture: ProfileLifecycleFixture) {
+  return execa(process.execPath, [dshBin, '--profile', 'lifecycle'], {
+    cwd: fixture.home,
+    stdin: 'pipe',
+    reject: false,
+    env: {
+      DSH_HOME: fixture.home,
+      DSH_SHUTDOWN_ON_STDIN_EOF: '1',
+      RAW_READY_FILE: fixture.ready,
+      RAW_SETTLED_FILE: fixture.settled,
+      RAW_DISPOSED_FILE: fixture.disposed,
+      RAW_INTERRUPT_FILE: fixture.interrupt,
+    },
+  })
+}
+
 function requestProfileShutdown(
   child: Pick<ReturnType<typeof startProfileLifecycle>, 'kill'>,
   fixture: Pick<ProfileLifecycleFixture, 'interrupt'>,
@@ -485,6 +501,23 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       requestProfileShutdown(child, fixture)
       const result = await child
       expect(result.exitCode, `${result.stderr}\nstdout:\n${result.stdout}\nsignal: ${String(result.signal)}`).toBe(0)
+      expect(result.signal).toBeUndefined()
+      expect(existsSync(fixture.disposed)).toBe(true)
+    } finally {
+      child.kill('SIGKILL')
+      rmSync(fixture.home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('disposes the profile tree when a supervisor closes stdin', async () => {
+    const fixture = createProfileLifecycleFixture()
+    const child = startSupervisedProfileLifecycle(fixture)
+    try {
+      await waitForFile(fixture.ready)
+      if (child.stdin === null) throw new Error('supervised dsh stdin pipe was not created')
+      child.stdin.end()
+      const result = await child
+      expect(result.exitCode, `${result.stderr}\nstdout:\n${result.stdout}`).toBe(0)
       expect(result.signal).toBeUndefined()
       expect(existsSync(fixture.disposed)).toBe(true)
     } finally {

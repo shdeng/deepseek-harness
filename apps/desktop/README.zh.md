@@ -28,6 +28,14 @@ pnpm desktop:check
 pnpm desktop:test
 ```
 
+使用内置 Node 运行时和生产 Host 依赖闭包构建 Windows 便携版载荷及安装包：
+
+```powershell
+pnpm --filter @deepseek-ai/dsh-desktop run release:windows
+```
+
+生成的 NSIS 安装包位于 `apps/desktop/src-tauri/target/release/bundle/nsis/`。便携目录由 `dsh-desktop-poc.exe` 及放在其旁边的 `release-resources/host`、`release-resources/runtime` 目录组成。
+
 壳层接受以下开发覆盖项：
 
 | 变量 | 含义 | 默认值 |
@@ -35,15 +43,17 @@ pnpm desktop:test
 | `DSH_DESKTOP_NODE` | Host 使用的 Node.js 可执行文件 | `PATH` 中的 `node` |
 | `DSH_DESKTOP_CLI` | 已构建的 `dsh` CLI 入口 | `apps/cli/lib/bin.js` |
 | `DSH_DESKTOP_CWD` | Host 工作目录，包括 profile 和设置解析的基准目录 | 壳层启动目录 |
+| `DSH_DESKTOP_SHUTDOWN_GRACE_MS` | Host 关闭请求与强制终止进程树之间的宽限期（1–60000 毫秒） | `7000` |
 
 ## 已实现范围
 
-- Rust 管理 Node 子进程，捕获其输出，检测异常退出，并在 Tauri 退出时终止和回收直接子进程。
+- Rust 在 Node Host 能够派生后代前，把它放入 Unix 进程组或 Windows Job Object。Tauri 退出时关闭受监督的 stdin 管道，等待 Host 释放 Cordis tree；如果超过配置的宽限期，则强制终止并回收完整进程树。
+- Windows release 构建携带固定 Node 可执行文件和生产 `pnpm deploy` 闭包；壳层会优先选择这些资源，再回退到开发用的 `PATH` 和仓库路径。
 - Host 在 `127.0.0.1` 上绑定操作系统分配的端口。WebView 导航围栏仅接受该子进程发布的精确端口。
 - 导航后，现有 Web 应用无需修改即可运行。
 - 加载页提供由 Rust 支持的目录选择器，作为窄范围原生操作探针；它未接入产品文件系统流程。
-- 单元测试覆盖 URL 校验和导航围栏。
+- 测试覆盖 URL 校验、导航围栏、通过受监督 stdin EOF 释放 profile，以及强制清理拒绝退出的后代进程。
 
 ## 有意保留的限制
 
-这不是可分发的桌面版本。它尚未打包 Node.js 或已构建的 JavaScript 依赖图，尚未用 Tauri IPC 替换 HTTP/WebSocket，也尚未实现 Host 优雅关闭握手或管理完整的后代进程树。原生目录选择器仅证明调用路径；生产文件系统选择必须回到 Host capability 及其权限策略，不能向 Web 客户端授予通用原生访问权。
+v0.1 Windows 产物是未签名的开发者预览版。它已打包 Node.js 和已构建的 JavaScript 依赖图，但尚未用 Tauri IPC 替换 HTTP/WebSocket。受监督的 stdin EOF 请求证明了优雅生命周期集成，但不是规划中的分帧 sidecar 协议。原生目录选择器仅证明调用路径；生产文件系统选择必须回到 Host capability 及其权限策略，不能向 Web 客户端授予通用原生访问权。

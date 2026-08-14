@@ -39,6 +39,24 @@ import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
+const SHUTDOWN_ON_STDIN_EOF_ENV = 'DSH_SHUTDOWN_ON_STDIN_EOF'
+
+/**
+ * Install the desktop/supervisor EOF shutdown request when explicitly enabled.
+ * The supervisor retains stdin until it wants the same bounded tree disposal
+ * as SIGTERM, then closes the pipe. Other CLI invocations keep their existing
+ * stdin ownership.
+ * @param interrupt - bounded process shutdown request.
+ */
+function installSupervisedStdinShutdown(interrupt: (code: number) => void): void {
+  const enabled = process.env[SHUTDOWN_ON_STDIN_EOF_ENV]
+  if (enabled === undefined) return
+  if (enabled !== '1') {
+    throw new Error(`${SHUTDOWN_ON_STDIN_EOF_ENV} must be "1" when set`)
+  }
+  process.stdin.resume()
+  process.stdin.once('end', () => { interrupt(0) })
+}
 
 /**
  * The home-level user patch layer (`$DSH_HOME/cordis.patch.yml`), applied
@@ -220,6 +238,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // complete; SIGINT is a user interrupt and reports 130.
   process.on('SIGTERM', () => { interrupt(0) })
   process.on('SIGINT', () => { interrupt(130) })
+  installSupervisedStdinShutdown(interrupt)
   installFailLoud(NAME, process, async () => {
     await app.current?.fiber.dispose()
   })

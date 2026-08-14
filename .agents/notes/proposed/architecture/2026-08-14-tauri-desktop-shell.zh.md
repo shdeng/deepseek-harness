@@ -86,17 +86,17 @@ client intent → existing Host API/tool → Host policy and permission → Rust
 
 ### 迁移顺序
 
-1. 用 `apps/desktop` 中的回环 PoC 验证复用：Rust 监督真实的已构建 `dsh web`，只导航到子进程发布的临时端口，并提供一个原生对话框探针。
+1. 用 `apps/desktop` 中的回环 PoC 验证复用：Rust 在操作系统进程容器中监督真实的已构建 `dsh web`，只导航到子进程发布的临时端口，通过受监督的 stdin EOF 请求优雅释放，并提供一个原生对话框探针。
 2. 增加私有分帧 Node/Rust 协议和 ready/关闭握手，同时仅把 Web server 保留为对照路径。
 3. 实现桌面 `AbstractApiClient` 载体和 Tauri custom-protocol bundle loader；从桌面 release 组合移除 `dsh-host-webserver`。
-4. 增加进程树所有权、打包 Node 与 JavaScript resource、应用数据目录解析和跨平台打包 smoke test。
+4. 增加打包 Node 与 JavaScript resource、应用数据目录解析，以及针对 PoC 已建立进程树所有权的跨平台打包 smoke test。
 5. 把选定原生 provider 放到现有或新完成的 capability seam 后。每条 seam 都包括 Service Definition、Rust 支持的 provider bridge、Consumer、单元覆盖、组合 e2e 覆盖，以及在行为对产品或模型可见时的 keyless snapshot 覆盖。
 
 ### PoC 证据与限制
 
-提交的 PoC 实现第 1 步。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` ready 行，把导航限制到该端口，捕获 Host 诊断，检测异常退出，并在壳层退出时终止和回收直接 Node 子进程。Rust 单元测试覆盖 URL 拒绝和导航授权。
+提交的 PoC 实现第 1 步和第 4 步的 Windows 打包范围。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` ready 行，把导航限制到该端口，捕获 Host 诊断，并检测异常退出。Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时关闭 Host 的受监督 stdin 管道，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树。Windows release 构建把固定 Node 可执行文件和生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。壳层在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。Rust 测试覆盖 URL 拒绝、导航授权、打包资源回退、协作退出和强制清理后代；built-CLI e2e test 证明 stdin EOF 会触发 profile 释放。
 
-PoC 的回环 HTTP/WebSocket 传输、直接子进程终止、开发 Node 发现和加载页目录选择器都是证据，不是生产决策。尤其是，直接子进程终止不能证明后代进程静止，选择器也尚未经过 Host 文件系统策略。
+PoC 的回环 HTTP/WebSocket 传输、受监督 stdin 控制通道、仅限 Windows 的未签名打包和加载页目录选择器都是证据，不是生产决策。Stdin EOF 证明了生命周期集成，但不能取代规划中的分帧 sidecar 关闭请求；选择器也尚未经过 Host 文件系统策略。
 
 ## 考虑过的替代方案
 

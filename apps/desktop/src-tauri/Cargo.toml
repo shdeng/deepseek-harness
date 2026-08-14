@@ -1,6 +1,6 @@
 [package]
 name = "dsh-desktop-poc"
-version = "0.1.0-rc.5"
+version = "0.1.0"
 description = "Tauri desktop-shell proof of concept for DeepSeek Harness"
 edition = "2021"
 license = "MIT"
@@ -9,6 +9,8 @@ license = "MIT"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+command-group = "5.0.1"
+dunce = "1"
 serde_json = "1"
 tauri = { version = "2.11.5", features = [] }
 tauri-plugin-dialog = "2.7.2"

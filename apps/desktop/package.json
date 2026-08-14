@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Tauri desktop-shell proof of concept over the shipped DeepSeek Harness Web Host",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0",
   "publishConfig": {
     "access": "public"
   },
@@ -28,6 +28,8 @@
     "dev": "pnpm run prepare:host && tauri dev",
     "dev:prepared": "tauri dev",
     "build": "pnpm run prepare:host && tauri build --no-bundle",
+    "prepare:release": "node scripts/prepare-release.mjs",
+    "release:windows": "pnpm run prepare:host && pnpm run prepare:release && tauri build --config src-tauri/tauri.release.conf.json",
     "check": "cargo check --manifest-path src-tauri/Cargo.toml",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"
   },

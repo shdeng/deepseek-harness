@@ -33,7 +33,9 @@ python/**/.pytest_cache/
 apps/web/dist/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/release-resources/
 .artifacts/
+.release/
 .playwright-mcp/
 .orig
 .worktrees/
