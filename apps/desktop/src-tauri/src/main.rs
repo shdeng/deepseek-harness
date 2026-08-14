@@ -110,6 +110,9 @@ impl HostLaunch {
     fn spawn(&self) -> Result<HostProcess, String> {
         let mut command = Command::new(&self.node);
         command
+            // Cordis Loader exposes its module map only through this explicit
+            // Node opt-in; config-only HMR uses that map in release profiles.
+            .arg("--expose-internals")
             .arg(&self.cli)
             .args(["web", "--host", "127.0.0.1", "--port", "0"])
             .current_dir(&self.cwd)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isForbiddenReleasePackage } from '../scripts/release-policy.mjs'
+import { findMissingInternalPeers, isForbiddenReleasePackage } from '../scripts/release-policy.mjs'
 
 describe('Desktop release package policy', () => {
   it.each([
@@ -17,5 +17,36 @@ describe('Desktop release package policy', () => {
 
   it('allows the native DeepSeek provider', () => {
     expect(isForbiddenReleasePackage('@deepseek-ai/dsh-llm-deepseek')).toBe(false)
+  })
+
+  it('reports required internal peers missing from the deployed package set', () => {
+    expect(findMissingInternalPeers([
+      {
+        name: '@deepseek-ai/dsh-consumer',
+        peerDependencies: {
+          '@deepseek-ai/dsh-required': 'workspace:^',
+          '@deepseek-ai/dsh-optional': 'workspace:^',
+          'third-party-peer': '^1.0.0',
+        },
+        peerDependenciesMeta: {
+          '@deepseek-ai/dsh-optional': { optional: true },
+        },
+      },
+    ])).toEqual([
+      {
+        owner: '@deepseek-ai/dsh-consumer',
+        dependency: '@deepseek-ai/dsh-required',
+      },
+    ])
+  })
+
+  it('accepts an installed required internal peer', () => {
+    expect(findMissingInternalPeers([
+      {
+        name: '@deepseek-ai/dsh-consumer',
+        peerDependencies: { '@deepseek-ai/dsh-required': 'workspace:^' },
+      },
+      { name: '@deepseek-ai/dsh-required' },
+    ])).toEqual([])
   })
 })

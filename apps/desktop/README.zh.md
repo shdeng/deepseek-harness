@@ -60,7 +60,7 @@ Profile、设置、凭据、附件和会话历史位于 `$DSH_HOME`（默认 `~/
 - 客户端 Connection 插件仅在壳层标记的 WebView 中选择 `DesktopApiClient`。Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 承载 `events.mux` 与 `events.host`。Node adapter 通过 HTTP adapter 使用的同一组 Connection 进程内 Fetch handler 分发请求。
 - Tauri 应用 manifest 为三个应用 command 生成权限；主窗口 capability 仅向本地应用内容和受导航围栏约束的 `127.0.0.1` Web UI 授予这些权限。
 - 活动请求数和客户端流队列具有固定安全上限；Node stdout 写入在产生更多流帧前等待 drain。
-- Windows release 构建携带固定 Node 可执行文件和仅含 DeepSeek 的生产 `pnpm deploy` 闭包。专用构建入口会在打包前排除 pi-ai、OpenAI、Anthropic、Codex 与 Claude package，已部署 manifest 审计会拒绝传递依赖回归；壳层会优先选择这些资源，再回退到开发用的 `PATH` 和仓库路径。
+- Windows release 构建携带固定 Node 可执行文件和仅含 DeepSeek 的生产 `pnpm deploy` 闭包。专用构建入口会在打包前排除 pi-ai、OpenAI、Anthropic、Codex 与 Claude package。已部署 manifest 审计会拒绝被排除的 package 和缺失的必需内部 peer；壳层会优先选择这些资源，再回退到开发用的 `PATH` 和仓库路径。
 - Release 构建会校验最新的稳定 GitHub Release，并在打开受信任的发布页前请求确认；下载和安装仍由用户明确执行。
 - Host 在 `127.0.0.1` 上绑定操作系统分配的端口。WebView 导航围栏仅接受该子进程发布的精确端口。
 - 导航后，现有 Web 应用和客户端插件图继续运行；只有 Connection 载体选择属于桌面端特例。

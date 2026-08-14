@@ -30,7 +30,8 @@
     "build": "pnpm run prepare:host && tauri build --no-bundle",
     "build:release-host": "node scripts/build-release-host.mjs",
     "prepare:release": "node scripts/prepare-release.mjs",
-    "release:windows": "pnpm run build:release-host && pnpm run prepare:release && tauri build --config src-tauri/tauri.release.conf.json",
+    "smoke:release-host": "node scripts/smoke-release-host.mjs",
+    "release:windows": "pnpm run build:release-host && pnpm run prepare:release && node scripts/smoke-release-host.mjs && tauri build --config src-tauri/tauri.release.conf.json",
     "check": "cargo check --manifest-path src-tauri/Cargo.toml",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"
   },
