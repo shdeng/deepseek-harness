@@ -80,9 +80,9 @@ client intent → existing Host API/tool → Host policy and permission → Rust
 
 ### 打包与更新
 
-首个可分发版本把已知 Node 运行时、已构建应用入口、工作区 package 闭包、客户端资产和所需原生模块作为 Tauri resource 或 sidecar 打包。初期不使用 Node Single Executable Applications，因为 profile 和插件解析需要普通模块与文件系统语义。构建 gate 在每个目标上使用打包的普通 Node 启动打包 Host 入口。
+首个可分发版本把已知 Node 运行时、已构建应用入口、应用专用工作区 package 闭包、客户端资产和所需原生模块作为 Tauri resource 或 sidecar 打包。桌面 release 构建会在 profile template、TypeScript reference、JavaScript bundle 和生产 deploy 各阶段选择 DeepSeek provider 组合。可选 pi-ai bundle 及其 OpenAI 与 Anthropic SDK 闭包，以及 Codex 与 Claude agent adapter，仍可供通用 CLI profile 使用，但不进入桌面 release 输入。若被排除的 package 通过传递依赖重新进入，manifest 审计会使 release 准备失败。初期不使用 Node Single Executable Applications，因为 profile 和插件解析需要普通模块与文件系统语义。构建 gate 在每个目标上使用打包的普通 Node 启动打包 Host 入口。
 
-用户 profile、会话、设置和缓存位于不可变应用 bundle 之外的平台应用数据目录。Schema 和会话格式拒绝行为继续由现有 Node package 管理。Rust 更新器只在 Host 静止后替换应用产物；回滚不改写用户数据。
+用户 profile、会话、设置、凭据、附件和缓存位于 `$DSH_HOME`（默认 `~/.dsh`），不在安装目录或便携版应用目录中。Schema 和会话格式拒绝行为继续由现有 Node package 管理。初始 release 检查器在启动时查询一次本仓库最新的稳定 GitHub Release，校验其数字版本和准确的仓库发布 URL，并在打开页面供用户手动下载前请求确认。它不下载、执行、替换或回滚应用产物。未来的自动安装器需要签名产物，并且必须在替换应用文件前使 Host 静止；安装和回滚都不得改写 `$DSH_HOME`。
 
 ### 迁移顺序
 
@@ -97,7 +97,7 @@ client intent → existing Host API/tool → Host policy and permission → Rust
 
 提交的 PoC 实现第 1–3 步和第 5 步的 Windows 打包范围。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` 资源 URL，并等待私有协议的 ready 帧后再导航。`DSH-IPC/1` 行帧通过受监督 stdio 承载 fetch 形式的请求/响应、流、取消、关闭和致命错误消息。Node adapter 通过 Connection 受信任的同进程 Fetch 入口分发，因此桌面 RPC 不会绕行回环 HTTP，也不会经过浏览器 HTTP 信任 fence；网络请求仍保留该 fence。Rust 校验传输字段、关联待处理请求、把流事件定向到所属窗口、限制活动 route、忽略已取消请求的迟到响应，并在窗口销毁时取消窗口所属流。客户端 Connection 插件只为壳层标记的 WebView 选择 `DesktopApiClient`；Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 以有界客户端 inbox 承载两条下行流。Node stdout 在写入下一帧前服从流背压。Tauri 应用 manifest 仅为目录探针和两个 IPC command 生成权限；主窗口 capability 向本地内容和受导航围栏约束的回环 Web UI 授予这些权限。
 
-Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时发送分帧关闭请求，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树；stdin EOF 仍作为协议损坏时的兜底。Windows release 构建把固定 Node 可执行文件和生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。壳层在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。聚焦 TypeScript 与 Rust 测试覆盖帧拒绝、载体选择、无需 HTTP 信任头的特权同进程分发、URL 与导航授权、取消记录、协作退出和强制清理后代。
+Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时发送分帧关闭请求，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树；stdin EOF 仍作为协议损坏时的兜底。Windows release 构建把固定 Node 可执行文件和仅含 DeepSeek 的生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。Release 命令使用桌面专用编译器和 bundler 选择，而不是仓库级全量构建；它从仅声明依赖的桌面 runtime root 执行 deploy，并拒绝结果中的 pi-ai、OpenAI、Anthropic、Codex 与 Claude package manifest。壳层在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。Release 构建还会执行上述有时限的 GitHub 检查；检查失败不阻塞 Host 或 WebView 启动，并且不会写入用户数据。聚焦 TypeScript 与 Rust 测试覆盖帧拒绝、载体选择、无需 HTTP 信任头的特权同进程分发、URL 与导航授权、取消记录、协作退出、强制清理后代、release 选择、受信任发布 URL 和准确的更新提示。原生更新对话框的打包交互自动化仍待完成。
 
 PoC 仍通过回环 HTTP 提供应用入口和动态客户端 bundle，并把 Web HTTP/WebSocket 载体保留为对照路径。自定义 bundle 协议、不含 `dsh-host-webserver` 的 release 组合、跨平台打包和经过 Host 策略的原生选择器仍待完成。加载页选择器只是证据，尚未经过 Host 文件系统策略。
 

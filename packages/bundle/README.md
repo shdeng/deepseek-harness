@@ -7,6 +7,7 @@ Profile bundles: npm packages whose manifest declares `"dsh": { "bundle": { "pat
 | Package | Role | ctx key |
 |---|---|---|
 | [`base/`](base/README.md) | The shared dsh core every profile applies first | — (patch only) |
+| [`llm-multi-provider/`](llm-multi-provider/README.md) | Optional pi-ai provider routes for multi-provider profiles | — (patch only) |
 | [`web-app/`](web-app/README.md) | Browser surface: web patch layer + runtime glue plugin | mounts rows |
 | [`headless/`](headless/README.md) | Direct one-shot task mode over base, with no Host or Web layer | mounts `headless-runner` |
 

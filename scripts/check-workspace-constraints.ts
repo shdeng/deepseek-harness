@@ -49,6 +49,8 @@ const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
 /** Directories whose packages this repository publishes: one release member each. */
 const releaseMemberDirectory = /^(?:packages\/[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
+/** Private workspace assemblies used only as package-manager deploy roots. */
+const internalWorkspacePackages = new Set(['@deepseek-ai/dsh-desktop-runtime'])
 
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
@@ -145,6 +147,7 @@ function workspaceManifests(): WorkspaceManifest[] {
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // Profile bundles publish their dsh.bundle.patch layer beside the lib.
   '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
+  '@deepseek-ai/dsh-llm-multi-provider': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
@@ -252,7 +255,8 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== expectedDirectory) {
       errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
     }
-  } else if (releaseMemberDirectory.test(dir)) {
+  } else if (releaseMemberDirectory.test(dir)
+    && (manifest.name === undefined || !internalWorkspacePackages.has(manifest.name))) {
     // Release members state that they are publishable: npm refuses a private
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.
@@ -291,7 +295,8 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')
+    && !internalWorkspacePackages.has(manifest.name)) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)

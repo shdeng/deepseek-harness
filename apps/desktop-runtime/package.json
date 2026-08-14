@@ -1,0 +1,25 @@
+{
+  "name": "@deepseek-ai/dsh-desktop-runtime",
+  "description": "Dependency-only deploy root for the DeepSeek-only Desktop Host closure",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-group": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/cosmokit": "workspace:^",
+    "@deepseek-ai/dsh-app-boot": "workspace:^",
+    "@deepseek-ai/dsh-base": "workspace:^",
+    "@deepseek-ai/dsh-cmdline": "workspace:^",
+    "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-host-apiproxy": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@deepseek-ai/dsh-launch-environment": "workspace:^",
+    "@deepseek-ai/dsh-web-app": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:^",
+    "commander": "^15.0.0"
+  }
+}

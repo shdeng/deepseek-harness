@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ipc;
+mod update;
 
 use std::{
     collections::VecDeque,
@@ -625,6 +626,7 @@ fn main() {
             if let Err(error) = setup_host.start(app.handle().clone()) {
                 report_status(app.handle(), &error);
             }
+            update::start_update_check(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -40,6 +40,15 @@ import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.
 
 const NAME = 'dsh'
 const SHUTDOWN_ON_STDIN_EOF_ENV = 'DSH_SHUTDOWN_ON_STDIN_EOF'
+const DESKTOP_SIDECAR_ENV = 'DSH_DESKTOP_SIDECAR'
+const DESKTOP_WEB_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] as const
+
+/** Resolve the profile template override owned by the packaged Desktop deployment. */
+export function resolveProfileTemplate(name: string, desktopSidecar = process.env[DESKTOP_SIDECAR_ENV]): readonly string[] | undefined {
+  if (desktopSidecar === undefined) return undefined
+  if (desktopSidecar !== '1') throw new Error(`${DESKTOP_SIDECAR_ENV} must be "1" when set`)
+  return name === 'web' ? DESKTOP_WEB_BUNDLES : undefined
+}
 
 /**
  * Install the desktop/supervisor EOF shutdown request when explicitly enabled.
@@ -115,7 +124,11 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  */
 export function prepareProfile(name: string, userLayer = true): Profile {
   healProfilesModuleFallback(INSTALL_ANCHOR)
-  const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
+  const template = resolveProfileTemplate(name)
+  const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, {
+    userLayer,
+    ...(template === undefined ? {} : { template }),
+  })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
 }

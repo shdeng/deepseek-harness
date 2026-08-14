@@ -1,0 +1,6 @@
+# Optional multi-provider layer over dsh-base. The adapter mounts dormant: it
+# registers no routes until the llm-pi-ai settings section supplies provider
+# profiles, and removes those routes when the section becomes empty.
+- insert:
+    - id: llm-pi-ai
+      name: '@deepseek-ai/dsh-llm-pi-ai'

@@ -168,6 +168,9 @@ importers:
       '@deepseek-ai/dsh-bash-local':
         specifier: workspace:^
         version: link:../../packages/shell/bash-local
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:^
+        version: link:../../packages/client/connection
       '@deepseek-ai/dsh-client-ui-agent-preset':
         specifier: workspace:^
         version: link:../../packages/client/ui-agent-preset
@@ -216,6 +219,9 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@deepseek-ai/dsh-host-apiproxy':
+        specifier: workspace:^
+        version: link:../../packages/host/apiproxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../packages/runtime-diagnostics/invariants
@@ -225,6 +231,9 @@ importers:
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../packages/util/launch-environment
+      '@deepseek-ai/dsh-llm-multi-provider':
+        specifier: workspace:^
+        version: link:../../packages/bundle/llm-multi-provider
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../packages/mcp/mcp-client
@@ -376,9 +385,6 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../packages/core/agent
-      '@deepseek-ai/dsh-host-apiproxy':
-        specifier: workspace:^
-        version: link:../../packages/host/apiproxy
       '@deepseek-ai/dsh-host-frontend-static':
         specifier: workspace:^
         version: link:../../packages/host/frontend-static
@@ -421,6 +427,54 @@ importers:
       '@tauri-apps/cli':
         specifier: 2.11.4
         version: 2.11.4
+
+  apps/desktop-runtime:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-group':
+        specifier: workspace:^
+        version: link:../../vendor/group
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../vendor/loader
+      '@deepseek-ai/cosmokit':
+        specifier: link:../../vendor/cosmokit
+        version: link:../../vendor/cosmokit
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../packages/boot/app-boot
+      '@deepseek-ai/dsh-base':
+        specifier: workspace:^
+        version: link:../../packages/bundle/base
+      '@deepseek-ai/dsh-cmdline':
+        specifier: workspace:^
+        version: link:../../packages/boot/cmdline
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../packages/util/home-paths
+      '@deepseek-ai/dsh-host-apiproxy':
+        specifier: workspace:^
+        version: link:../../packages/host/apiproxy
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../packages/runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:^
+        version: link:../../packages/util/launch-environment
+      '@deepseek-ai/dsh-web-app':
+        specifier: workspace:^
+        version: link:../../packages/bundle/web-app
+      '@deepseek-ai/schemastery':
+        specifier: link:../../vendor/schemastery
+        version: link:../../vendor/schemastery
+      commander:
+        specifier: ^15.0.0
+        version: 15.0.0
 
   apps/web:
     dependencies:
@@ -1121,9 +1175,6 @@ importers:
       '@deepseek-ai/dsh-llm-deepseek':
         specifier: workspace:^
         version: link:../../llm/llm-deepseek
-      '@deepseek-ai/dsh-llm-pi-ai':
-        specifier: workspace:^
-        version: link:../../llm/llm-pi-ai
       '@deepseek-ai/dsh-llm-retry':
         specifier: workspace:^
         version: link:../../llm/llm-retry
@@ -1324,6 +1375,19 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+
+  packages/bundle/llm-multi-provider:
+    dependencies:
+      '@deepseek-ai/dsh-llm-pi-ai':
+        specifier: workspace:^
+        version: link:../../llm/llm-pi-ai
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
 
   packages/bundle/web-app:
     dependencies:

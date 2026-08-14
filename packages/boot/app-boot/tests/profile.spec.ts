@@ -152,6 +152,7 @@ describe('loadProfile', () => {
     // cannot be asserted to fail here: the source-plane test runner resolves
     // @deepseek-ai/* through tsconfig paths regardless of the staged anchor.
     expect(PROFILE_TEMPLATES.web).toContain('@deepseek-ai/dsh-base')
+    expect(PROFILE_TEMPLATES.web).toContain('@deepseek-ai/dsh-llm-multi-provider')
     try {
       loadProfile('t', 'web', anchor, home)
     } catch {
@@ -161,9 +162,10 @@ describe('loadProfile', () => {
       .toEqual([...PROFILE_TEMPLATES.web ?? []])
   })
 
-  it('normalizes only the exact installation-owned headless bundle tuple', () => {
+  it('normalizes exact installation-owned tuples without changing custom lists', () => {
     const anchor = stageInstallation({
       '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-llm-multi-provider': { patch: '[]\n' },
       '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
       '@deepseek-ai/dsh-headless': { patch: '[]\n' },
       'custom-bundle': { patch: '[]\n' },
@@ -175,7 +177,9 @@ describe('loadProfile', () => {
     ])
     loadProfile('t', 'headless', anchor, home)
     expect(readProfileManifest('t', stock).dsh?.profile?.bundles)
-      .toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'])
+      .toEqual([
+        '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-llm-multi-provider', '@deepseek-ai/dsh-headless',
+      ])
 
     const customHome = tmp()
     const custom = resolveProfileDir('headless', customHome)
@@ -186,6 +190,20 @@ describe('loadProfile', () => {
     expect(readProfileManifest('t', custom).dsh?.profile?.bundles).toEqual([
       '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', 'custom-bundle',
     ])
+  })
+
+  it('normalizes a shipped web tuple to an application-owned template', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-llm-multi-provider': { patch: '[]\n' },
+      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('web', home)
+    initProfile(dir, [...PROFILE_TEMPLATES.web ?? []])
+    const template = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
+    loadProfile('t', 'web', anchor, home, { template })
+    expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(template)
   })
 
   it('fails loud when a listed bundle declares no dsh.bundle', () => {

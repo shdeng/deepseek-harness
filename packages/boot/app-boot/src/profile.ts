@@ -112,12 +112,13 @@ export function resolveProfileDir(name: string, home: string = resolveDshHome())
 
 /** The shipped profile templates auto-initialized on first use, by name. */
 export const PROFILE_TEMPLATES: Record<string, readonly string[]> = {
-  web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
-  headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+  web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-llm-multi-provider', '@deepseek-ai/dsh-web-app'],
+  headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-llm-multi-provider', '@deepseek-ai/dsh-headless'],
 }
 
 /** Installation-owned bundle tuples normalized to the shipped template. */
 const INSTALLATION_OWNED_PROFILE_TUPLES: Record<string, readonly string[]> = {
+  web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
   headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'],
 }
 
@@ -294,12 +295,19 @@ function sameBundles(left: readonly string[], right: readonly string[]): boolean
  * Normalize an exact installation-owned bundle tuple to its shipped template
  * while preserving every other manifest field. Any other list is user-owned.
  */
-function normalizeShippedProfile(name: string, dir: string, manifest: ProfileManifest): ProfileManifest {
+function normalizeShippedProfile(
+  name: string,
+  dir: string,
+  manifest: ProfileManifest,
+  current: readonly string[] | undefined = PROFILE_TEMPLATES[name],
+): ProfileManifest {
   const installationOwned = INSTALLATION_OWNED_PROFILE_TUPLES[name]
-  const current = PROFILE_TEMPLATES[name]
+  const shipped = PROFILE_TEMPLATES[name]
   const bundles = manifest.dsh?.profile?.bundles
-  if (installationOwned === undefined || current === undefined || bundles === undefined
-    || !sameBundles(bundles, installationOwned)) return manifest
+  if (current === undefined || bundles === undefined || sameBundles(bundles, current)) return manifest
+  const installationOwnedTuple = installationOwned !== undefined && sameBundles(bundles, installationOwned)
+  const shippedTuple = shipped !== undefined && sameBundles(bundles, shipped)
+  if (!installationOwnedTuple && !shippedTuple) return manifest
   const normalized: ProfileManifest = {
     ...manifest,
     dsh: {
@@ -365,16 +373,17 @@ export function resolveBundleDir(
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
  * @param options - `userLayer: false` skips reading `cordis.patch.yml`, so a
  * bundles-only consumer (`--dump-default-config`, a recovery diagnostic)
- * cannot fail on a broken user layer.
+ * cannot fail on a broken user layer. `template` selects an application-owned
+ * bundle tuple for a specialized deployment of a shipped profile.
  * @returns the loaded profile (empty `patches` when the user layer is skipped).
  */
 export function loadProfile(
   binName: string, name: string, installAnchor: string, home: string = resolveDshHome(),
-  options: { userLayer?: boolean } = {},
+  options: { userLayer?: boolean; template?: readonly string[] } = {},
 ): Profile {
   const dir = resolveProfileDir(name, home)
   if (!existsSync(join(dir, 'package.json'))) {
-    const template = PROFILE_TEMPLATES[name]
+    const template = options.template ?? PROFILE_TEMPLATES[name]
     if (template === undefined) {
       throw new Error(
         `${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`,
@@ -382,7 +391,12 @@ export function loadProfile(
     }
     initProfile(dir, template)
   }
-  const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  const manifest = normalizeShippedProfile(
+    name,
+    dir,
+    readProfileManifest(binName, dir),
+    options.template ?? PROFILE_TEMPLATES[name],
+  )
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers = bundles.map((packageName): ProfileLayer => {

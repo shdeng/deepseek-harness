@@ -28,11 +28,13 @@ pnpm desktop:check
 pnpm desktop:test
 ```
 
-使用内置 Node 运行时和生产 Host 依赖闭包构建 Windows 便携版载荷及安装包：
+使用内置 Node 运行时和桌面端专用生产 Host 依赖闭包构建 Windows 便携版载荷及安装包：
 
 ```powershell
 pnpm --filter @deepseek-ai/dsh-desktop run release:windows
 ```
+
+此命令使用桌面端专用 TypeScript 和 bundle 构建，再从 `@deepseek-ai/dsh-desktop-runtime` 而非通用 CLI package 执行 deploy。Release 组合仅包含 DeepSeek：多 Provider pi-ai bundle、OpenAI 与 Anthropic SDK、Codex 与 Claude agent SDK 及其 Harness adapter 均不进入构建和 deploy 闭包。Release 准备会扫描所有已部署 package manifest；若被排除的 package 通过传递依赖重新进入，则立即失败。通用 `dsh web` 和 `dsh headless` profile 仍包含可选的多 Provider bundle。
 
 生成的 NSIS 安装包位于 `apps/desktop/src-tauri/target/release/bundle/nsis/`。便携目录由 `dsh-desktop-poc.exe` 及放在其旁边的 `release-resources/host`、`release-resources/runtime` 目录组成。
 
@@ -45,6 +47,12 @@ pnpm --filter @deepseek-ai/dsh-desktop run release:windows
 | `DSH_DESKTOP_CWD` | Host 工作目录，包括 profile 和设置解析的基准目录 | 壳层启动目录 |
 | `DSH_DESKTOP_SHUTDOWN_GRACE_MS` | Host 关闭请求与强制终止进程树之间的宽限期（1–60000 毫秒） | `7000` |
 
+## 更新与用户数据
+
+Release 构建在启动时检查一次本仓库最新的稳定 GitHub Release。若其数字版本更新，原生确认对话框会询问是否用系统浏览器打开该版本的准确发布页。应用不会静默下载、执行或替换二进制文件；取消提示后继续运行当前版本。网络、响应校验或浏览器打开失败只会记录日志，不会阻塞 Host 或 WebView 启动。
+
+Profile、设置、凭据、附件和会话历史位于 `$DSH_HOME`（默认 `~/.dsh`），不在 NSIS 安装目录或便携版应用目录中。更新检查不会写入 `$DSH_HOME`，安装较新版本时只替换应用文件。若未来版本明确宣布用户数据迁移，请在升级前保留备份。
+
 ## 已实现范围
 
 - Rust 在 Node Host 能够派生后代前，把它放入 Unix 进程组或 Windows Job Object。Tauri 退出时发送分帧关闭请求并等待 Host 释放 Cordis tree；如果超过配置的宽限期，则强制终止并回收完整进程树。协议管道失败时仍以 stdin EOF 兜底。
@@ -52,7 +60,8 @@ pnpm --filter @deepseek-ai/dsh-desktop run release:windows
 - 客户端 Connection 插件仅在壳层标记的 WebView 中选择 `DesktopApiClient`。Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 承载 `events.mux` 与 `events.host`。Node adapter 通过 HTTP adapter 使用的同一组 Connection 进程内 Fetch handler 分发请求。
 - Tauri 应用 manifest 为三个应用 command 生成权限；主窗口 capability 仅向本地应用内容和受导航围栏约束的 `127.0.0.1` Web UI 授予这些权限。
 - 活动请求数和客户端流队列具有固定安全上限；Node stdout 写入在产生更多流帧前等待 drain。
-- Windows release 构建携带固定 Node 可执行文件和生产 `pnpm deploy` 闭包；壳层会优先选择这些资源，再回退到开发用的 `PATH` 和仓库路径。
+- Windows release 构建携带固定 Node 可执行文件和仅含 DeepSeek 的生产 `pnpm deploy` 闭包。专用构建入口会在打包前排除 pi-ai、OpenAI、Anthropic、Codex 与 Claude package，已部署 manifest 审计会拒绝传递依赖回归；壳层会优先选择这些资源，再回退到开发用的 `PATH` 和仓库路径。
+- Release 构建会校验最新的稳定 GitHub Release，并在打开受信任的发布页前请求确认；下载和安装仍由用户明确执行。
 - Host 在 `127.0.0.1` 上绑定操作系统分配的端口。WebView 导航围栏仅接受该子进程发布的精确端口。
 - 导航后，现有 Web 应用和客户端插件图继续运行；只有 Connection 载体选择属于桌面端特例。
 - 加载页提供由 Rust 支持的目录选择器，作为窄范围原生操作探针；它未接入产品文件系统流程。
@@ -60,4 +69,4 @@ pnpm --filter @deepseek-ai/dsh-desktop run release:windows
 
 ## 有意保留的限制
 
-v0.1 Windows 产物是未签名的开发者预览版。回环 Web 服务器仍提供应用入口和动态客户端 bundle，因此构建仍会打开监听端口，并保留 Web 载体作为回退。下一项传输工作是使用 Tauri 自定义协议承载 Host 生成的 boot manifest 和 bundle 字节，随后建立不包含 `dsh-host-webserver` 的桌面 release 组合。原生目录选择器仅证明调用路径；生产文件系统选择必须回到 Host capability 及其权限策略，不能向 Web 客户端授予通用原生访问权。
+v0.2 Windows 产物是未签名的开发者预览版。应用打开 GitHub Release 页面后，升级仍需手动完成；目前没有签名的应用内安装器、后台下载或自动回滚。回环 Web 服务器仍提供应用入口和动态客户端 bundle，因此构建仍会打开监听端口，并保留 Web 载体作为回退。下一项传输工作是使用 Tauri 自定义协议承载 Host 生成的 boot manifest 和 bundle 字节，随后建立不包含 `dsh-host-webserver` 的桌面 release 组合。原生目录选择器仅证明调用路径；生产文件系统选择必须回到 Host capability 及其权限策略，不能向 Web 客户端授予通用原生访问权。
