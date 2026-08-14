@@ -66,3 +66,13 @@ describe('FishLogo', () => {
     expect(container.innerHTML).not.toContain('M0 0L23.16')
   })
 })
+
+describe('AppLogo', () => {
+  it('renders the shared application mark at the requested square size', () => {
+    const { container } = render(<primitives.AppLogo size={40} className="x" />)
+    const logo = container.querySelector('[aria-hidden="true"]') as HTMLElement
+    expect(logo.style.width).toBe('40px')
+    expect(logo.style.height).toBe('40px')
+    expect(logo.classList.contains('x')).toBe(true)
+  })
+})

@@ -107,10 +107,8 @@
   justify-content: flex-start;
 }
 
-/* Brand group (figma I133:7632): the full wordmark rides the text ink
-   (figma flows: the main-screen instance is black; blue is brand
-   emphasis only). A button only in behavior (New Session shortcut): the
-   pointer cursor is the sole affordance — no hover chrome on the mark. */
+/* Brand group: the shared application mark doubles as a New Session
+   shortcut. The pointer cursor is its sole affordance — no hover chrome. */
 .brand {
   flex: 1;
   min-width: 0;
@@ -122,6 +120,10 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+
+.brandLogo {
+  display: block;
 }
 
 .iconButton {
@@ -148,9 +150,8 @@
   height: 36px;
 }
 
-/* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
-   no hover circle) and hovering reveals the panel icon — the expand
-   affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
+/* Rail logo swap: collapsed, the toggle rests as the app mark with no hover
+   circle. Hovering reveals the panel icon (the expand affordance). */
 .collapsed .toggle .panelIcon {
   display: none;
 }
@@ -159,7 +160,7 @@
   display: inline;
 }
 
-.collapsed .toggle:hover .railFish {
+.collapsed .toggle:hover .railLogo {
   display: none;
 }
 

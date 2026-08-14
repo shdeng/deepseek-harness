@@ -1,4 +1,4 @@
-/* NEW SESSION hero (figma Input_Bottom 75:8208): fish + title, workspace chip
+/* NEW SESSION hero: app mark + title, with the workspace chip
    above the shared InputBar card. The input itself is InputBar — only stack
    geometry and the chip live here. */
 
@@ -62,7 +62,7 @@
 }
 
 /* Keep hover detection on a stationary box while the mark moves within it. */
-.fishHitbox {
+.appLogoHitbox {
   grid-row: 1;
   grid-column: 1;
   display: inline-flex;
@@ -70,13 +70,11 @@
   justify-content: center;
 }
 
-/* Keep the hero mark in the same primary ink as its headline. */
-.fish {
-  color: var(--dsw-alias-label-primary);
+.appLogo {
   transform-origin: 50% 60%;
 }
 
-@keyframes hero-fish-swim {
+@keyframes hero-logo-drift {
   0%, 100% {
     transform: translate(0, 0) rotate(0deg);
   }
@@ -91,8 +89,8 @@
 }
 
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .fishHitbox:hover .fish {
-    animation: hero-fish-swim var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+  .appLogoHitbox:hover .appLogo {
+    animation: hero-logo-drift var(--ds-transition-duration-slow) var(--ds-ease-in-out);
   }
 }
 
