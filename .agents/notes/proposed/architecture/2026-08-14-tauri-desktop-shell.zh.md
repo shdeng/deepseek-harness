@@ -37,13 +37,19 @@ Node Host sidecar
 
 `apps/desktop` 是应用组合，不是可复用 package。Capability 行为留在 `packages/`；应用专用传输和启动接线留在该应用内。此方案不修改 `agent-loop`。
 
+### 组合边界
+
+图形应用组合按职责拆分，而不是沿用历史入口。`dsh-gui-app` 携带两个图形表层共用的传输无关 Host 服务、客户端模块注册表、Connection 服务、客户端插件清单与按会话 agent preset。`dsh-web-app` 添加 HTTP server、`/api`、WebSocket 下行流、`/plugins`、frontend-static fallback、HMR、浏览器信任和 Web 启动参数。`dsh-desktop-app` 选择 Desktop 原生 provider，且不包含 Web server、静态服务、HTTP route、WebSocket 或 HMR 行。`web` 模板组合 `base + llm-multi-provider + gui-app + web-app`；`desktop` 模板组合 `base + gui-app + desktop-app`。
+
+传输无关 package 不得自行发明网络所有者。`dsh-client-modules` 发现、哈希并读取已构建的客户端资源。Web 组合把这些读取映射到 `/plugins`；Rust 壳层把它们映射到 `dsh-plugin://localhost/<opaque-digest>/client.js`。`dsh-client-connection` 始终提供受信任的同进程 Fetch bridge，而 HTTP 与 WebSocket adapter 仅在 Web server service 存在时激活。
+
 ### 进程与信任模型
 
 打包后的 Tauri 可执行文件是进程根。它使用固定的、应用自有的 Host 入口启动内置 Node 运行时，并通过显式启动消息传递配置。生产环境不得从 `PATH` 查找任意 `node` 或 Host 脚本。开发覆盖项保持显式启用，并在目标不存在时立即报错。
 
 Rust 为 Node 进程及全部后代建立一个所有权域：Windows 使用 Job Object，Unix 使用进程组和父进程死亡处理。关闭时先发送协议级停止请求，等待 Host 服务和会话持久化静止，再在可配置期限后终止所有权域。只有 Host 完成 profile 加载、注册 API 方法并返回客户端启动清单后，启动才进入 ready。异常退出以可恢复壳层错误呈现，并附带有界 stderr 尾部。
 
-WebView 不能导航到任意远程内容。应用资产使用 Tauri 应用 origin；客户端插件 bundle 使用应用自有 custom protocol；外部链接经过 allowlist 判定后在系统浏览器打开。Content Security Policy 排除远程脚本和通用网络访问。
+WebView 不能导航到任意远程内容。应用资产使用 Tauri 应用 origin；客户端插件 bundle 使用应用自有 custom protocol；外部链接经过 allowlist 判定后在系统浏览器打开。Content Security Policy 排除远程脚本和通用网络访问。由于 Cordis 客户端模块 evaluator 与 schemastery 回调复活会通过 `new Function` 执行 Host 提供的受信任代码，策略明确允许 `unsafe-eval`；由于受信任的客户端 bundle 会在运行时实体化各自的作用域 CSS，策略也允许内联样式。这些例外不会引入远程脚本、样式、图片或字体来源，也不会削弱导航限制。
 
 ### 桌面 RPC 载体
 
@@ -86,20 +92,19 @@ client intent → existing Host API/tool → Host policy and permission → Rust
 
 ### 迁移顺序
 
-1. 用 `apps/desktop` 中的回环 PoC 验证复用：Rust 在操作系统进程容器中监督真实的已构建 `dsh web`，只导航到子进程发布的临时端口，通过受监督的 stdin EOF 请求优雅释放，并提供一个原生对话框探针。
-2. 增加私有分帧 Node/Rust 协议和 ready/关闭握手，同时仅把 Web server 保留为对照路径。
-3. 实现桌面 `AbstractApiClient` 载体：Tauri command 承载上行请求，定向 event 承载下行流，回环仍提供应用资源。
-4. 增加 Tauri custom-protocol boot manifest 与 bundle loader；从桌面 release 组合移除 `dsh-host-webserver`。
-5. 增加打包 Node 与 JavaScript resource、应用数据目录解析，以及针对 PoC 已建立进程树所有权的跨平台打包 smoke test。
-6. 把选定原生 provider 放到现有或新完成的 capability seam 后。每条 seam 都包括 Service Definition、Rust 支持的 provider bridge、Consumer、单元覆盖、组合 e2e 覆盖，以及在行为对产品或模型可见时的 keyless snapshot 覆盖。
+1. v0.1–v0.2 已完成：用回环 PoC 验证复用，建立进程树所有权，打包固定 Node 运行时和 Desktop Host 闭包，加入分帧协议，并把产品 RPC 切换到 Tauri 载体。
+2. v0.3 已完成：从 Web 传输中拆出共享图形组合，通过私有协议返回启动清单，以应用自有 custom protocol 提供动态 bundle，嵌入已构建应用入口，并从 Desktop release 移除 Web server 闭包。
+3. v0.3 之后已完成：把目录／文件选择迁到完整 Host capability seam 后，由 Desktop provider 调用 Rust，并从 WebView capability 移除通用 picker command。
+4. v0.3 之后已完成：通过 Host 到 Rust 的私有协议迁移安全凭据存储、受控外链打开、通知、应用元数据和深链接。文件系统和 subprocess 执行留在 Node，直到另有论证的 provider 能保留其策略与流式行为。
+5. 稳定发布前：加入 macOS 与 Linux 产物 job、签名和公证、打包 WebView 交互覆盖、协议 transcript 一致性 fixture，以及保留 `$DSH_HOME` 的更新安装器设计。
 
-### PoC 证据与限制
+### v0.3 证据与限制
 
-提交的 PoC 实现第 1–3 步和第 5 步的 Windows 打包范围。它使用真实的已构建 CLI 和 Web 应用，解析精确的 `dsh web: http://127.0.0.1:<port>/` 资源 URL，并等待私有协议的 ready 帧后再导航。`DSH-IPC/1` 行帧通过受监督 stdio 承载 fetch 形式的请求/响应、流、取消、关闭和致命错误消息。Node adapter 通过 Connection 受信任的同进程 Fetch 入口分发，因此桌面 RPC 不会绕行回环 HTTP，也不会经过浏览器 HTTP 信任 fence；网络请求仍保留该 fence。Rust 校验传输字段、关联待处理请求、把流事件定向到所属窗口、限制活动 route、忽略已取消请求的迟到响应，并在窗口销毁时取消窗口所属流。客户端 Connection 插件只为壳层标记的 WebView 选择 `DesktopApiClient`；Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 以有界客户端 inbox 承载两条下行流。Node stdout 在写入下一帧前服从流背压。Tauri 应用 manifest 仅为目录探针和两个 IPC command 生成权限；主窗口 capability 向本地内容和受导航围栏约束的回环 Web UI 授予这些权限。
+提交的 v0.3 基础会启动 `--profile desktop`，等待包含客户端启动清单的 `ready` 帧，并且不再启动 `dsh web`。`DSH-IPC/1` 行帧通过受监督 stdio 承载 Fetch 形式的请求与响应、流帧、取消、不透明资源读取、关闭和致命错误。Node adapter 通过 Connection 受信任的同进程 Fetch 入口分发产品 RPC。Rust 校验传输字段与 custom-protocol 资源 URL、关联待处理请求、把流事件定向到所属窗口、限制活动 route、忽略已取消请求的迟到响应，并在窗口销毁时取消窗口所属流。带壳层标记的 WebView 选择 `DesktopApiClient`；Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 以有界客户端 inbox 承载两条下行流。
 
 Rust 壳层在 Host 能够派生后代前创建 Unix 进程组或 Windows Job Object。壳层退出时发送分帧关闭请求，等待 CLI 有界释放 Cordis tree；超过可配置的外层宽限期后，强制终止并回收完整进程树；stdin EOF 仍作为协议损坏时的兜底。Windows release 构建把固定 Node 可执行文件和仅含 DeepSeek 的生产 `pnpm deploy` 闭包作为 Tauri resource 携带；release 准备会实体化工作区链接，使产物不依赖仓库路径。Release 命令使用桌面专用编译器和 bundler 选择，而不是仓库级全量构建；它从仅声明依赖的桌面 runtime root 执行隔离的注入式 deploy 且不改变仓库安装状态，拒绝被排除的 package manifest 和缺失的必需内部 peer，然后验证打包 Host 的启动与协作关闭。壳层传入 Cordis 配置 HMR 所需的显式 Node loader-internals 开关，在把 Host 入口交给 Node 前规范化 Windows verbatim resource 路径，并优先选择打包资源，再回退到开发路径。Release 构建还会执行上述有时限的 GitHub 检查；检查失败不阻塞 Host 或 WebView 启动，并且不会写入用户数据。聚焦 TypeScript 与 Rust 测试覆盖帧拒绝、载体选择、无需 HTTP 信任头的特权同进程分发、URL 与导航授权、取消记录、协作退出、强制清理后代、release 选择、受信任发布 URL 和准确的更新提示。原生更新对话框的打包交互自动化仍待完成。
 
-PoC 仍通过回环 HTTP 提供应用入口和动态客户端 bundle，并把 Web HTTP/WebSocket 载体保留为对照路径。自定义 bundle 协议、不含 `dsh-host-webserver` 的 release 组合、跨平台打包和经过 Host 策略的原生选择器仍待完成。加载页选择器只是证据，尚未经过 Host 文件系统策略。
+应用入口嵌入 Tauri 二进制，动态 bundle 使用只包含 Host 生成不透明摘要的规范 `dsh-plugin://localhost` URL。Rust 校验这些 URL 后，会在 Windows 上把它们映射为 WebView2 的 `http://dsh-plugin.localhost` custom-protocol origin；macOS 与 Linux 保留规范 scheme。CSP 回归测试固定了狭窄的动态代码例外并拒绝远程脚本 scheme；初始化脚本会显示启动异常，避免留下空白 WebView。Release policy 禁止 `dsh-web-app`、`dsh-host-webserver`、`dsh-host-frontend-static`、`dsh-web-frontend` 与 `dsh-client-hmr` 进入 Desktop 闭包。打包 Host smoke 会验证 ready 清单、Host 在 Windows 上不持有 TCP listener、一次 bundle 读取、原生应用元数据、一次 `host.describe` unary 调用和分帧协作关闭。反向私有协议现在承载由 Host 发起的原生请求和由 Rust 发起的深链接事件。`ctx.desktopNative` 提供目录选择、受控 HTTP(S) 打开、通知投递和应用元数据；Desktop 凭据提供方在 Rust 对话框中采集 secret，将其存入平台凭据库，并通过同进程 Rust 库解析，因此 WebView 与 stdio 帧只携带凭据引用。主窗口 ACL 只保留事件监听和三个应用 RPC command，不授予 picker、凭据、opener、通知、元数据或深链接插件 command。Rust 测试还覆盖强制清理后代与原生 URL 策略。剩余缺口是自动化的打包 WebView 交互 smoke、在打包产物中实际执行一次下行 event、非 Windows 打包与签名、通知操作，以及未来可能进行的文件系统或 subprocess provider 迁移。
 
 ## 考虑过的替代方案
 
@@ -111,14 +116,14 @@ PoC 仍通过回环 HTTP 提供应用入口和动态客户端 bundle，并把 We
 
 ## 验收标准
 
-- [ ] Release 桌面构建无需系统 Node 安装即可启动，且不打开监听端口。
-- [ ] 现有 Host profile、会话、工具、设置和客户端插件组合正常运行，`agent-loop` 或 UI 功能 package 中不存在桌面专用分叉。
+- [x] Windows release 桌面构建携带自身 Node 运行时，且 Host 不打开监听端口。
+- [x] 现有 Host profile、会话、工具、设置和客户端插件组合正常运行，`agent-loop` 或 UI 功能 package 中不存在桌面专用分叉。
 - [ ] 四个 RPC 象限、取消、有界交付、窗口关闭、Host 崩溃和壳层关闭均有桌面载体的聚焦测试。
-- [ ] Host 继续作为文件系统、凭据、进程和模型可见操作的权威；Rust provider 不能通过通用 WebView 逃生口访问。
+- [x] Host 继续作为文件系统、凭据、进程和模型可见操作的权威；Rust provider 不能通过通用 WebView 逃生口访问。
 - [ ] Windows、macOS 和 Linux 打包 smoke test 证明启动 ready、一次单次调用、一次下行事件、一次动态客户端 bundle 加载、优雅关闭和后代进程清理。
-- [ ] Release Content Security Policy 和导航测试拒绝远程脚本、任意网络和任意本地文件访问。
-- [ ] 构建输入固定 Node 运行时和原生依赖，打包 Host smoke test 针对生成产物而不是源码运行。
-- [ ] 桌面行为变化同步更新受影响的 README/JSDoc、本 note 或其后继文档，并在输出对产品或模型可见时更新 keyless snapshot。
+- [x] Release Content Security Policy 和导航测试在配置的壳层边界拒绝远程脚本、任意网络和任意本地文件访问。
+- [x] Windows 构建输入固定 Node 运行时，打包 Host smoke test 针对生成产物而不是源码运行。
+- [x] Desktop 行为变化同步更新受影响的 README/JSDoc 与本 note；v0.3 不改变产品或模型可见 transcript。
 
 ## 风险
 

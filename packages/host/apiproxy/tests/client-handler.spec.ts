@@ -74,6 +74,8 @@ function scriptedApi(overrides: {
       describe: r => ok(r, {
         version: '0-test', cwd: '/t', attachedSessions: 0, canOpenPath: true,
       }),
+      openExternal: r => ok(r, { opened: true as const }),
+      notify: r => ok(r, { sent: true as const }),
       pickDirectory: r => ok(r, { path: null }),
       listDirectory: r => ok(r, { path: '/t', home: '/t', crumbs: [], entries: [], truncated: false }),
       createDirectory: r => ok(r, { path: '/t/new' }),
@@ -119,6 +121,7 @@ function scriptedApi(overrides: {
     credentials: {
       describe: r => ok(r, { credentials: {} }),
       set: err,
+      capture: err,
       unset: err,
       ...overrides.credentials,
     },
@@ -745,7 +748,7 @@ describe('config unary surface', () => {
         mutate: record('settings.mutate', r => ok(r, view)),
       },
       credentials: {
-        describe: record('credentials.describe', r => ok(r, { credentials: { OPENAI_API_KEY: { configured: true, source: 'file', writable: true } } })),
+        describe: record('credentials.describe', r => ok(r, { credentials: { OPENAI_API_KEY: { configured: true, source: 'file', writable: true, input: 'value' } } })),
         set: record('credentials.set', r => ok(r, {})),
         unset: record('credentials.unset', r => ok(r, {})),
       },
@@ -771,7 +774,7 @@ describe('config unary surface', () => {
     })
     expect(mutated.result).toEqual({ ok: true, value: view })
     const creds = await c.credentials.describe({ refs: ['OPENAI_API_KEY'] })
-    expect(creds.result).toEqual({ ok: true, value: { credentials: { OPENAI_API_KEY: { configured: true, source: 'file', writable: true } } } })
+    expect(creds.result).toEqual({ ok: true, value: { credentials: { OPENAI_API_KEY: { configured: true, source: 'file', writable: true, input: 'value' } } } })
     expect((await c.credentials.set({ ref: 'OPENAI_API_KEY', value: 'sk-x' })).result).toEqual({ ok: true, value: {} })
     expect((await c.credentials.unset({ ref: 'OPENAI_API_KEY' })).result).toEqual({ ok: true, value: {} })
     const providers = await c.llm.providers({})

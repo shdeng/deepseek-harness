@@ -28,18 +28,24 @@ const invocation = parseDshArgs(process.argv.slice(2), readVersion())
 
 switch (invocation.mode) {
   case 'profile': {
+    const desktopSidecar = process.env.DSH_DESKTOP_SIDECAR
+    if (desktopSidecar !== undefined && desktopSidecar !== '1') {
+      throw new Error('DSH_DESKTOP_SIDECAR must be "1" when set')
+    }
+    const desktop = desktopSidecar === undefined
+      ? undefined
+      : await import('./desktop-sidecar.ts').then(module => module.createDesktopNativeChannel())
     const { runProfile } = await import('./profile-boot.ts')
     const runtime = await runProfile({
       environment: loadLayeredEnv('dsh'),
       profile: invocation.profile,
       patchFiles: invocation.patches,
       args: invocation.args,
+      ...(desktop === undefined ? {} : { prepare: desktop.provide }),
     })
-    const desktopSidecar = process.env.DSH_DESKTOP_SIDECAR
-    if (desktopSidecar !== undefined) {
-      if (desktopSidecar !== '1') throw new Error('DSH_DESKTOP_SIDECAR must be "1" when set')
+    if (desktop !== undefined) {
       const { runDesktopSidecar } = await import('./desktop-sidecar.ts')
-      await runDesktopSidecar(runtime)
+      await runDesktopSidecar(runtime, desktop.channel)
     }
     break
   }

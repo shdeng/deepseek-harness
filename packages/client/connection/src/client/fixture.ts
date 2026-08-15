@@ -2525,6 +2525,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       describe: request => ok(request, {
         version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, canOpenPath: true,
       }),
+      openExternal: request => ok(request, { opened: true as const }),
+      notify: request => ok(request, { sent: true as const }),
       // Deterministic native pick: the keyless lanes drive the full
       // pick-then-adopt path without an OS chooser (design-mock content,
       // same tree the browse primitives serve).
@@ -2932,12 +2934,14 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           configured: fixtureCredentials.has(ref),
           ...fixtureCredentials.has(ref) ? { source: 'file' } : {},
           writable: true,
+          input: 'value' as const,
         }])),
       }),
       set: (request) => {
         fixtureCredentials.set(request.payload.ref, true)
         return ok(request, {})
       },
+      capture: request => ok(request, { stored: false }),
       unset: (request) => {
         fixtureCredentials.delete(request.payload.ref)
         return ok(request, {})
@@ -3094,6 +3098,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'subagent.prompt': return this.api.subagents.prompt(request, signal)
       case 'subagent.interrupt': return this.api.subagents.interrupt(request)
       case 'host.describe': return this.api.host.describe(request)
+      case 'host.openExternal': return this.api.host.openExternal(request, signal)
+      case 'host.notify': return this.api.host.notify(request, signal)
       case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)
@@ -3125,6 +3131,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'settings.mutate': return this.api.settings.mutate(request)
       case 'credentials.describe': return this.api.credentials.describe(request)
       case 'credentials.set': return this.api.credentials.set(request)
+      case 'credentials.capture': return this.api.credentials.capture(request, signal)
       case 'credentials.unset': return this.api.credentials.unset(request)
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)

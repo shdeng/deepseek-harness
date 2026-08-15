@@ -43,6 +43,7 @@ void forwardedEventContracts
 
 interface Bench {
   ctx: Context
+  api: FakeApiClient
   sinks: ConnectionSinks | undefined
   /** Every `$dispatch` the runtime made, as `[event, ...args]`. */
   dispatched: unknown[][]
@@ -52,7 +53,7 @@ async function mount(): Promise<Bench> {
   const ctx = new Context()
   await ctx.plugin(TypertRegistry)
   const api = new FakeApiClient()
-  const bench: Bench = { ctx, sinks: undefined, dispatched: [] }
+  const bench: Bench = { ctx, api, sinks: undefined, dispatched: [] }
   // Stands in for api-gateway's Remote service: this spec owns the carrier's
   // handoff, not the fan-out behind it.
   ctx.reflect.provide('remote', {
@@ -62,7 +63,10 @@ async function mount(): Promise<Bench> {
     api,
     isLoopback: true,
     hostDescription: {
-      getSnapshot: () => undefined,
+      getSnapshot: () => ({
+        version: '0', cwd: '/f', attachedSessions: 0, canOpenPath: true,
+        desktop: { name: 'DeepSeek Harness Desktop', identifier: 'ai.deepseek.harness.desktop' },
+      }),
       subscribe: () => () => {},
     },
     rpc: {
@@ -131,5 +135,45 @@ describe('wire event bridge', () => {
     bench.sinks?.onConnected?.(description)
     bench.sinks?.onConnected?.(description) // second generation after a reconnect
     expect(resets).toBe(2)
+  })
+
+  it('opens a session from a deep-link frame', async () => {
+    const bench = await mount()
+    bench.sinks?.onHostEnvelope?.({
+      rpcId: 'add' as never,
+      payload: { type: 'host/session-added', sessionId: 'deep-session' as never, blank: true },
+    })
+    bench.sinks?.onHostEnvelope?.({
+      rpcId: 'link' as never,
+      payload: { type: 'host/deep-link', sessionId: 'deep-session' as never },
+    })
+    expect(bench.ctx.sessions.list.getSnapshot().current).toBe('deep-session')
+  })
+
+  it('notifies after a background running session becomes idle', async () => {
+    const bench = await mount()
+    const prior = Object.getOwnPropertyDescriptor(globalThis, 'document')
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: { visibilityState: 'hidden' },
+    })
+    try {
+      bench.sinks?.onHostEnvelope?.({
+        rpcId: 'run' as never,
+        payload: { type: 'host/session-status', sessionId: 'background' as never, running: true },
+      })
+      bench.sinks?.onHostEnvelope?.({
+        rpcId: 'idle' as never,
+        payload: { type: 'host/session-status', sessionId: 'background' as never, running: false },
+      })
+      await Promise.resolve()
+      expect(bench.api.callsOf('host.notify')).toEqual([{
+        title: 'DeepSeek Harness Desktop',
+        body: 'Task background finished',
+      }])
+    } finally {
+      if (prior === undefined) delete (globalThis as { document?: unknown }).document
+      else Object.defineProperty(globalThis, 'document', prior)
+    }
   })
 })

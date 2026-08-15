@@ -176,6 +176,8 @@ export class FakeApiClient implements IApiClient {
 
   readonly host: IApiClient['host'] = {
     describe: (payload: unknown) => this.record('host.describe', payload, this.onDescribe(payload)),
+    openExternal: (payload: unknown) => this.record('host.openExternal', payload, Promise.resolve(ok({ opened: true as const }))),
+    notify: (payload: unknown) => this.record('host.notify', payload, Promise.resolve(ok({ sent: true as const }))),
     pickDirectory: (payload: unknown) => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
     listDirectory: (payload: unknown) => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: (payload: unknown) => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
@@ -268,6 +270,7 @@ export class FakeApiClient implements IApiClient {
   readonly credentials: IApiClient['credentials'] = {
     describe: payload => this.record('credentials.describe', payload, Promise.resolve(ok({ credentials: {} }))),
     set: payload => this.record('credentials.set', payload, Promise.resolve(ok({}))),
+    capture: payload => this.record('credentials.capture', payload, Promise.resolve(ok({ stored: true }))),
     unset: payload => this.record('credentials.unset', payload, Promise.resolve(ok({}))),
   }
 

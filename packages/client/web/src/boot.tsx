@@ -47,8 +47,11 @@ import { getStaticModules } from './seed.ts'
 import { STATE_LABELS, createLoaderStatusStore, createSignal } from './loader-status.ts'
 import './base.css'
 
-/** Module transport hook the shell passes through (jsdom tests replace the <script> path). */
-export type BootSeams = Pick<ClientModuleSystemOptions, 'loadBundle'>
+/** Boot inputs the application carrier may replace (tests replace the script path). */
+export interface BootSeams extends Pick<ClientModuleSystemOptions, 'loadBundle'> {
+  /** Raw Host-authored manifest; defaults to `window.__DSH_BOOT__` for Web. */
+  manifest?: unknown
+}
 
 /**
  * The modules package's own graph row id. The kernel adopts that entry
@@ -95,10 +98,11 @@ export class AppWebEntry {
    * @returns resolves once the UI settled or the failure report rendered.
    */
   async run(): Promise<void> {
-    this.manifest = parseBootManifest((globalThis as DshWindow).__DSH_BOOT__)
+    this.manifest = parseBootManifest(this.seams?.manifest ?? (globalThis as DshWindow).__DSH_BOOT__)
 
+    const { manifest: _manifest, ...moduleSeams } = this.seams ?? {}
     this.modules = new ClientModuleSystem({
-      modules: this.manifest.modules, staticModules: getStaticModules(), ...this.seams,
+      modules: this.manifest.modules, staticModules: getStaticModules(), ...moduleSeams,
     })
     // The app-shell assembly is the only shell-own module: every other graph
     // row is a plugin bundle arriving through fetch.

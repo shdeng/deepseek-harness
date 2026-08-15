@@ -13,10 +13,12 @@
 import { createRequire } from 'node:module'
 import { networkInterfaces } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { addHarnessSourceSection } from '@deepseek-ai/dsh-app-boot'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
+import { injectBootManifest, type ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -126,6 +128,46 @@ function resolveDistIndex(): string {
 /** Test hook: hosts with no built frontend dist substitute the resolver; production never touches this. */
 export const internals: { resolveDistIndex: () => string } = { resolveDistIndex }
 
+/** Serve the Web carrier's client-bundle path from the transport-neutral registry. */
+async function serveClientAsset(
+  modules: ClientModuleRegistry,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405)
+    res.end()
+    return
+  }
+  let pathname: string
+  try {
+    pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)
+  } catch {
+    res.writeHead(404)
+    res.end()
+    return
+  }
+  const prefix = '/plugins/'
+  const mapSuffix = '/client.js.map'
+  const bundleSuffix = '/client.js'
+  const sourceMap = pathname.startsWith(prefix) && pathname.endsWith(mapSuffix)
+  const suffix = sourceMap ? mapSuffix : bundleSuffix
+  const id = pathname.startsWith(prefix) && pathname.endsWith(suffix)
+    ? pathname.slice(prefix.length, -suffix.length)
+    : undefined
+  const asset = id === undefined ? undefined : await modules.readAsset(id, sourceMap)
+  if (asset === undefined) {
+    res.writeHead(404)
+    res.end()
+    return
+  }
+  res.writeHead(200, {
+    'content-type': asset.contentType,
+    'cache-control': 'no-cache',
+  })
+  res.end(req.method === 'HEAD' ? undefined : asset.body)
+}
+
 /**
  * Mount the Web runtime: dist serving, surface prompt, the bash runtime
  * variable, and the URL line.
@@ -137,6 +179,20 @@ export function apply(ctx: Context, config: Config): void {
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
+  ctx.inject(['clientModules'], (moduleCtx) => {
+    moduleCtx.effect(
+      () => moduleCtx.webServer.register({
+        kind: 'prefix',
+        path: '/plugins',
+        handler: (req, res) => serveClientAsset(moduleCtx.clientModules, req, res),
+      }),
+      'web-app: client bundle route',
+    )
+    moduleCtx.effect(
+      () => moduleCtx.webServer.tapIndex(html => injectBootManifest(html, moduleCtx.clientModules.graph())),
+      'web-app: boot manifest injection',
+    )
+  })
   if (config.surfaceContext) {
     ctx.inject(['systemPrompt'], (promptCtx) => {
       addHarnessSourceSection(promptCtx, SOURCE_ROOT)

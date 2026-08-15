@@ -89,6 +89,20 @@ describe('connection client apply', () => {
     expect(handle.isLoopback).toBe(true)
   })
 
+  it('refuses plaintext credential writes before invoking Tauri', async () => {
+    ;(globalThis as Win).location = { hostname: '127.0.0.1', search: '' }
+    ;(globalThis as DesktopGlobal).__DSH_DESKTOP_IPC__ = true
+    const invoke = vi.fn()
+    ;(globalThis as DesktopGlobal).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn() },
+    }
+    const handle = await mount()
+    await expect(handle.api.credentials.set({ ref: 'DEEPSEEK_API_KEY', value: 'secret' }))
+      .rejects.toThrow(/native secure input/)
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
   it('carries desktop generic RPC through a Tauri command without fetch', async () => {
     ;(globalThis as Win).location = { hostname: '127.0.0.1', search: '', origin: 'http://127.0.0.1:3080' }
     ;(globalThis as DesktopGlobal).__DSH_DESKTOP_IPC__ = true

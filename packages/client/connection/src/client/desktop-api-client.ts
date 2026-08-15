@@ -2,7 +2,7 @@
 
 import { hostFrameSchema, muxFrameSchema } from '@deepseek-ai/dsh-host-apiproxy/api/events.schema'
 import { serverRequestSchema } from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
-import type { ApiProxy, HostFrame, MuxFrame, RpcRequest, ServerRequest } from './api.ts'
+import type { ApiProxy, HostFrame, IApiClient, MuxFrame, RpcRequest, ServerRequest } from './api.ts'
 import { AbstractApiClient } from './api.ts'
 import { randomUuid } from './random-uuid.ts'
 
@@ -90,6 +90,13 @@ export async function desktopFetch(input: URL, init?: RequestInit): Promise<Resp
 
 /** Desktop platform subclass: commands carry unary calls and events carry downstream streams. */
 export class DesktopApiClient extends AbstractApiClient {
+  override readonly credentials: IApiClient['credentials'] = {
+    describe: (payload, signal) => this.callUnary('credentials.describe', payload, signal),
+    set: () => Promise.reject(new Error('desktop credentials must be entered through native secure input')),
+    capture: (payload, signal) => this.callUnary('credentials.capture', payload, signal, 'caller-signal-only'),
+    unset: (payload, signal) => this.callUnary('credentials.unset', payload, signal),
+  }
+
   protected doFetch(input: URL, init?: RequestInit): Promise<Response> {
     return desktopFetch(input, init)
   }

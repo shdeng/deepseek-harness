@@ -1,30 +1,35 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DeepSeek Harness Desktop",
-  "version": "0.2.0",
-  "identifier": "ai.deepseek.dsh.desktop.poc",
+  "version": "0.3.0",
+  "identifier": "ai.deepseek.harness.desktop",
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["deepseek-harness"]
+      }
+    }
+  },
   "build": {
-    "frontendDist": "../static"
+    "frontendDist": "../../web/dist"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' dsh-plugin: http://dsh-plugin.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src ipc: http://ipc.localhost",
       "capabilities": [
         {
           "identifier": "desktop-main",
-          "description": "Allows the navigation-fenced loopback Web UI to use the desktop shell IPC commands and events.",
+          "description": "Allows the packaged, navigation-fenced WebView to use the desktop shell IPC commands and events.",
           "windows": ["main"],
           "local": true,
-          "remote": {
-            "urls": ["http://127.0.0.1:*/*"]
-          },
           "permissions": [
-            "core:default",
-            "allow-desktop-pick-directory",
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
             "allow-desktop-ipc-request",
-            "allow-desktop-ipc-cancel"
+            "allow-desktop-ipc-cancel",
+            "allow-desktop-boot-manifest"
           ]
         }
       ]

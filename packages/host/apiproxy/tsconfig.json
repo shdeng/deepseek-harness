@@ -93,6 +93,9 @@
       "path": "../directory-picker"
     },
     {
+      "path": "../desktop-native"
+    },
+    {
       "path": "../../extensions/cordis-host-runner"
     },
     {

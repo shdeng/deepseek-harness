@@ -30,6 +30,9 @@
       "path": "../../host/webserver"
     },
     {
+      "path": "../../client/modules"
+    },
+    {
       "path": "../../core/system-prompt"
     },
     {

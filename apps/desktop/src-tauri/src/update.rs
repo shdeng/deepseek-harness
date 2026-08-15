@@ -159,7 +159,7 @@ pub(crate) fn start_update_check(app: AppHandle) {
                     ))
                     .show(move |confirmed| {
                         if confirmed {
-                            if let Err(error) = webbrowser::open(&release_url) {
+                            if let Err(error) = crate::open_external(&release_url) {
                                 eprintln!("[dsh-desktop] failed to open the release page: {error}");
                             }
                         }
@@ -217,13 +217,13 @@ mod tests {
     #[test]
     fn update_prompt_names_the_versions_and_data_guarantee() {
         let current = Version::parse(env!("CARGO_PKG_VERSION")).expect("package version is valid");
-        let candidate = available_update(release("v0.3"), &current)
+        let candidate = available_update(release("v0.4"), &current)
             .expect("release is valid")
             .expect("release is newer");
         assert_eq!(
             update_prompt(&candidate),
             format!(
-                "DeepSeek Harness Desktop v0.3 is available. You are using v{}. Open the GitHub release page to download and install it?\n\nYour configuration and session history under $DSH_HOME are not changed by the update.",
+                "DeepSeek Harness Desktop v0.4 is available. You are using v{}. Open the GitHub release page to download and install it?\n\nYour configuration and session history under $DSH_HOME are not changed by the update.",
                 env!("CARGO_PKG_VERSION")
             )
         );

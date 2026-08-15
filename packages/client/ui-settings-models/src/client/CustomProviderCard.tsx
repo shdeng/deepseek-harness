@@ -7,8 +7,9 @@
  * the provider editor with extra fields: the route id is being *chosen* here,
  * and the settings address does not exist until it is. One `settings.mutate`
  * sets the whole profile at `providers.<route>`; the key travels separately
- * through `credentials.set` under the reference the profile records, exactly as
- * an existing provider's key does.
+ * through `credentials.set` on Web profiles or native capture on Desktop,
+ * under the reference the profile records exactly as an existing provider's
+ * key does.
  *
  * The three fields a hand-declared route cannot default — endpoint, protocol,
  * and at least one model — are required here rather than at load, so the
@@ -75,6 +76,7 @@ export interface CustomProviderCardProps {
  */
 export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const { taken, protocols, api, t } = props
+  const nativeCredential = (globalThis as { __DSH_DESKTOP_IPC__?: boolean }).__DSH_DESKTOP_IPC__ === true
   // Captured at mount, like the editor's: the write must be judged against the
   // section this card was drafted over, not whatever it grew into meanwhile.
   const [openedAt] = useState(() => props.revision)
@@ -102,7 +104,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   // bad row is named by its position here too. Capacities have route-level
   // fallbacks; what a route cannot default is at least one model.
   const modelFailure = validateDeepSeekModels(models)
-  const keyFailure = apiKeyFailure(keyDraft)
+  const keyFailure = nativeCredential ? undefined : apiKeyFailure(keyDraft)
   // The typed key with paste whitespace removed. A blank field yields an empty
   // string, which the create path reads as "no key supplied" — a route may
   // legitimately authenticate through the provider's own ambient discovery.
@@ -131,7 +133,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   /** Perform the create, returning a failure message or undefined. */
   const createOnce = async (): Promise<string | undefined> => {
     const keyRef = deriveKeyRef(route)
-    const storesKey = keyValue.length > 0
+    const storesKey = nativeCredential || keyValue.length > 0
     if (!committed) {
       const profile = {
         ...displayName.length === 0 ? {} : { displayName },
@@ -160,10 +162,15 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       setCommitted(true)
     }
     if (storesKey) {
-      const stored = await api.credentials.set({ ref: keyRef, value: keyValue })
+      const stored = nativeCredential
+        ? await api.credentials.capture({ ref: keyRef })
+        : await api.credentials.set({ ref: keyRef, value: keyValue })
       // The profile landed; saying the key did not is the only honest report,
       // and the retry above now goes straight back to this write.
       if (!stored.result.ok) return stored.result.error.message
+      if (nativeCredential && 'stored' in stored.result.value && !stored.result.value.stored) {
+        return t('keyRequired')
+      }
     }
     return undefined
   }
@@ -247,20 +254,22 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       </div>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
-        <input
-          className={styles['input']}
-          type="password"
-          autoComplete="off"
-          value={keyDraft}
-          placeholder={t('keyPlaceholder')}
-          aria-label={t('keyInput')}
-          disabled={disabled}
-          onChange={(event) => { setKeyDraft(event.target.value) }}
-        />
+        {nativeCredential
+          ? <p className={styles['advancedHint']}>{t('keyCaptureOnCreate')}</p>
+          : <input
+            className={styles['input']}
+            type="password"
+            autoComplete="off"
+            value={keyDraft}
+            placeholder={t('keyPlaceholder')}
+            aria-label={t('keyInput')}
+            disabled={disabled}
+            onChange={(event) => { setKeyDraft(event.target.value) }}
+          />}
         {/* A create card has no stored key to keep, so the blank case says
             what a blank field means here instead: this route may authenticate
             through the provider's own ambient discovery or OAuth. */}
-        {keyFailure === undefined
+        {nativeCredential || keyFailure === undefined
           ? null
           : <p className={styles['error']}>{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</p>}
       </div>

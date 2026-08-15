@@ -1,0 +1,12 @@
+[package]
+name = "dsh-credential-store"
+version = "0.3.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+keyring = "4.1.5"
+zeroize = "1.8.2"

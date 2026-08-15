@@ -42,6 +42,15 @@
       "path": "../../packages/host/apiproxy"
     },
     {
+      "path": "../../packages/host/desktop-native"
+    },
+    {
+      "path": "../../packages/credentials/credentials"
+    },
+    {
+      "path": "../../packages/client/modules"
+    },
+    {
       "path": "../../packages/host/webserver"
     },
     {

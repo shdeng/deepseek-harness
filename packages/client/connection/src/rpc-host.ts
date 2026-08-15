@@ -1,7 +1,7 @@
 /** Host registry and HTTP adapter for generic Connection RPC channels. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import {
   clientRequestSchema,
   RpcId,
@@ -45,11 +45,16 @@ export class HostConnectionService extends Service implements HostConnectionHand
   private readonly localFetchHandlers = new Map<string, FetchHandler>()
 
   /**
-   * Provide the Host half over the active HTTP server.
+   * Provide the Host half. An optional Web server adds network routes; local
+   * Fetch dispatch remains available without a listener.
    * @param ctx - owning Connection plugin context.
    * @param trustedHosts - deployment authorities accepted by trusted-host channels.
    */
-  constructor(ctx: Context, private readonly trustedHosts: readonly string[]) {
+  constructor(
+    ctx: Context,
+    private readonly trustedHosts: readonly string[],
+    private readonly webServer?: WebServer,
+  ) {
     super(ctx, 'connection')
   }
 
@@ -133,11 +138,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     return owner.effect(
       () => {
-        const disposeRoute = owner.webServer.register(route)
+        const disposeRoute = this.webServer?.register(route)
         this.localFetchHandlers.set(channel, fetchHandler)
         return () => {
           this.localFetchHandlers.delete(channel)
-          disposeRoute()
+          disposeRoute?.()
         }
       },
       `client-connection: ${channel} rpc channel`,

@@ -18,7 +18,29 @@ export const hostDescribeValueSchema = z.object({
   model: z.string().optional(),
   attachedSessions: z.number().int().nonnegative(),
   canOpenPath: z.boolean(),
+  desktop: z.object({ name: z.string().min(1), identifier: z.string().min(1) }).optional(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.describe'>>>
+
+/** host.openExternal request payload. */
+export const hostOpenExternalRequestSchema = z.object({
+  url: z.url().max(4096),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.openExternal'>>>
+
+/** host.openExternal response value. */
+export const hostOpenExternalValueSchema = z.object({
+  opened: z.literal(true),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.openExternal'>>>
+
+/** host.notify request payload. */
+export const hostNotifyRequestSchema = z.object({
+  title: z.string().min(1).max(128),
+  body: z.string().max(1024),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.notify'>>>
+
+/** host.notify response value. */
+export const hostNotifyValueSchema = z.object({
+  sent: z.literal(true),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.notify'>>>
 
 /** host.pickDirectory request payload (empty object literal). */
 export const hostPickDirectoryRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'host.pickDirectory'>>>

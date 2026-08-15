@@ -172,6 +172,7 @@ function scriptedFace(overrides: {
           configured: ref === 'OPENAI_API_KEY',
           ...ref === 'OPENAI_API_KEY' ? { source: 'file' } : {},
           writable: true,
+          input: 'value' as const,
         }])),
       }))),
       set,
@@ -209,7 +210,7 @@ async function mountFirstRun(overrides: Parameters<typeof scriptedFace>[0] = {})
   const scripted = scriptedFace(overrides)
   scripted.face.credentials.describe.mockImplementation((payload: { refs: string[] }) =>
     Promise.resolve(ok({
-      credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+      credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true, input: 'value' as const }])),
     })))
   return mountFace(scripted)
 }
@@ -263,7 +264,7 @@ describe('ModelsSection', () => {
   it('marks only a confirmed missing reference and leaves native or unavailable state unmarked', async () => {
     const { face } = scriptedFace()
     face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
-      credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+      credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true, input: 'value' as const }])),
     })))
     const controller = new ModelsSettingsStore(face as unknown as WireFace)
     await controller.load()
@@ -285,7 +286,7 @@ describe('ModelsSection', () => {
   it('turns the setup card into a row once the credential reports configured', async () => {
     const { face } = await mountFirstRun()
     face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
-      credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: true, writable: true }])),
+      credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: true, writable: true, input: 'value' as const }])),
     })))
     const controller = new ModelsSettingsStore(face as unknown as WireFace)
     await controller.load()
@@ -311,7 +312,7 @@ describe('ModelsSection', () => {
       credential,
     })
     expect(needsSetup(row(undefined), false)).toBe(true)
-    expect(needsSetup(row({ configured: true, writable: true }), false)).toBe(false)
+    expect(needsSetup(row({ configured: true, writable: true, input: 'value' }), false)).toBe(false)
     const nested = { ...row(undefined), entry: { ...entry, settingsPath: ['providers', 'x'] } }
     expect(needsSetup(nested, false)).toBe(false)
     // A user who can already reach some provider is not in the first-run
@@ -1065,7 +1066,7 @@ describe('ModelsSection', () => {
     const { face } = await mountSection()
     face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
       credentials: Object.fromEntries(payload.refs.map(ref => [ref, {
-        configured: ref === 'OPENAI_API_KEY', source: 'env', writable: false,
+        configured: ref === 'OPENAI_API_KEY', source: 'env', writable: false, input: 'value' as const,
       }])),
     })))
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))

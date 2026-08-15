@@ -99,9 +99,25 @@ abstract set(ref: CredentialRef, value: string): Promise<void>
  * @param ref - the reference to remove.
  */
 abstract unset(ref: CredentialRef): Promise<void>
+
+/**
+ * How configuration surfaces may supply new values. File-backed providers
+ * accept a value; desktop system-vault providers open native secure input.
+ * @returns the provider's input mode.
+ */
+inputMode(): CredentialInputMode
+
+/**
+ * Ask the provider-owned native UI to capture and store one credential.
+ * Value-input providers reject this operation.
+ * @param ref - opaque reference whose value is being captured.
+ * @param signal - caller lifetime.
+ * @returns true when stored, or false when the operator cancels.
+ */
+capture(ref: CredentialRef, signal: AbortSignal): Promise<boolean>
 ```
 
-Source: [`packages/credentials/credentials/src/index.ts:60`](../../packages/credentials/credentials/src/index.ts)
+Source: [`packages/credentials/credentials/src/index.ts:63`](../../packages/credentials/credentials/src/index.ts)
 
 <a id="credentials-events"></a>
 

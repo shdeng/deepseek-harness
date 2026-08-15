@@ -4,7 +4,7 @@ import type { CredentialView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelsSettingsState, ProviderRow } from '../src/client/store.ts'
 import { onboardingReadiness, providerUsable } from '../src/client/store.ts'
 
-const missingCredential: CredentialView = { configured: false, writable: true }
+const missingCredential: CredentialView = { configured: false, writable: true, input: 'value' }
 
 function row(overrides: Partial<ProviderRow> = {}): ProviderRow {
   return {
@@ -36,7 +36,7 @@ function otherRow(overrides: Partial<ProviderRow> = {}): ProviderRow {
     configured: true,
     removable: true,
     apiKeyEnv: 'HFAI_API_KEY',
-    credential: { configured: true, source: 'file', writable: true },
+    credential: { configured: true, source: 'file', writable: true, input: 'value' },
     ...overrides,
   }
 }
@@ -95,10 +95,10 @@ describe('onboardingReadiness', () => {
 
   it('accepts file and process-environment credentials without prompting', () => {
     expect(onboardingReadiness(state({
-      rows: [row({ credential: { configured: true, source: 'file', writable: true } })],
+      rows: [row({ credential: { configured: true, source: 'file', writable: true, input: 'value' } })],
     }))).toEqual({ kind: 'provider-ready' })
     expect(onboardingReadiness(state({
-      rows: [row({ credential: { configured: true, source: 'env', writable: false } })],
+      rows: [row({ credential: { configured: true, source: 'env', writable: false, input: 'value' } })],
     }))).toEqual({ kind: 'provider-ready' })
   })
 
@@ -120,7 +120,7 @@ describe('onboardingReadiness', () => {
       rows: [row({ credential: undefined })],
     }))).toEqual({ kind: 'unavailable', reason: 'credentials-unavailable' })
     expect(onboardingReadiness(state({
-      rows: [row({ credential: { configured: false, writable: false } })],
+      rows: [row({ credential: { configured: false, writable: false, input: 'value' } })],
     }))).toEqual({ kind: 'unavailable', reason: 'credential-read-only' })
     expect(onboardingReadiness(state({ writable: false }))).toEqual({
       kind: 'unavailable',

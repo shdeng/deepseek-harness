@@ -81,6 +81,7 @@ import type {} from '@deepseek-ai/dsh-skill'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-host-desktop-native'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
@@ -2921,11 +2922,23 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     host: {
-      describe(request) {
-        // TODO: version should read apps/cli's package.json; placeholder for now.
+      async describe(request) {
         const selection = defaults.defaultModelSelection()
-        return Promise.resolve(ok(request, {
-          version: '0.0.1',
+        const desktopNative = ctx.get('desktopNative')
+        let metadata: Awaited<ReturnType<NonNullable<typeof desktopNative>['metadata']>> | undefined
+        if (desktopNative !== undefined) {
+          try {
+            metadata = await desktopNative.metadata(new AbortController().signal)
+          } catch (error: unknown) {
+            return err(request, {
+              code: 'internal',
+              message: `desktop application metadata failed: ${error instanceof Error ? error.message : String(error)}`,
+              details: {},
+            })
+          }
+        }
+        return ok(request, {
+          version: metadata?.version ?? '0.0.1',
           // Same source as session.create's fallback: the UI's default project
           // must match where an unspecified-cwd session actually lands.
           cwd: defaults.cwd,
@@ -2935,7 +2948,44 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           model: selection.model,
           attachedSessions: ctx.agents.list().length,
           canOpenPath: canOpenPaths(),
-        }))
+          ...metadata === undefined ? {} : {
+            desktop: { name: metadata.name, identifier: metadata.identifier },
+          },
+        })
+      },
+
+      async openExternal(request, signal) {
+        const desktopNative = ctx.get('desktopNative')
+        if (desktopNative === undefined) {
+          return err(request, { code: 'internal', message: 'external-link opening is unavailable outside the desktop profile', details: {} })
+        }
+        try {
+          await desktopNative.openExternal(request.payload.url, signal)
+          return ok(request, { opened: true })
+        } catch (error: unknown) {
+          return err(request, {
+            code: signal.aborted ? 'cancelled' : 'internal',
+            message: signal.aborted ? 'external-link opening was aborted' : `external-link opening failed: ${error instanceof Error ? error.message : String(error)}`,
+            details: {},
+          })
+        }
+      },
+
+      async notify(request, signal) {
+        const desktopNative = ctx.get('desktopNative')
+        if (desktopNative === undefined) {
+          return err(request, { code: 'internal', message: 'system notifications are unavailable outside the desktop profile', details: {} })
+        }
+        try {
+          await desktopNative.notify(request.payload, signal)
+          return ok(request, { sent: true })
+        } catch (error: unknown) {
+          return err(request, {
+            code: signal.aborted ? 'cancelled' : 'internal',
+            message: signal.aborted ? 'system notification was aborted' : `system notification failed: ${error instanceof Error ? error.message : String(error)}`,
+            details: {},
+          })
+        }
       },
 
       async pickDirectory(request, signal) {
@@ -3328,6 +3378,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             configured: info.configured,
             ...info.source === undefined ? {} : { source: info.source },
             writable: info.writable,
+            input: credentials.inputMode(),
           }
           return [ref, view] as const
         }))
@@ -3348,6 +3399,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
         return ok(request, {})
+      },
+
+      async capture(request, signal) {
+        const credentials = ctx.get('credentials')
+        if (credentials === undefined) return err(request, credentialsAbsent())
+        const { ref } = request.payload
+        try {
+          return ok(request, { stored: await credentials.capture(credentialRef(ref), signal) })
+        } catch (error: unknown) {
+          if (signal.aborted) {
+            return err(request, { code: 'cancelled', message: 'credential capture was aborted', details: { ref } })
+          }
+          return err(request, {
+            code: 'credential-rejected',
+            message: error instanceof Error ? error.message : String(error),
+            details: { ref },
+          })
+        }
       },
 
       async unset(request) {
@@ -3562,6 +3631,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }),
           ctx.on('agent/error', ({ agent, error }: { agent: Agent; error: unknown }) => {
             queue.push(frame({ type: 'host/agent-error', sessionId: agent.id, message: errorChain(error) }))
+          }),
+          ctx.on('desktopNative/deep-link', (sessionId) => {
+            queue.push(frame({ type: 'host/deep-link', sessionId: sessionId as SessionId }))
           }),
           ctx.on('domain/changed', (change) => {
             if (change.domain !== 'workspace') return

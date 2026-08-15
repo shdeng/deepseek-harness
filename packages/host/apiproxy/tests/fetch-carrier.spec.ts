@@ -147,6 +147,12 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           },
         }
       },
+      async openExternal(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } } }
+      },
+      async notify(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { sent: true as const } } }
+      },
       async pickDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }
       },
@@ -266,6 +272,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
       async set(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: {} } }
+      },
+      async capture(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { stored: true as const } } }
       },
       async unset(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: {} } }

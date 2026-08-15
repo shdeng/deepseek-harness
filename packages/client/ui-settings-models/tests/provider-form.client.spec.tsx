@@ -12,7 +12,10 @@ import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEdito
 import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  delete (globalThis as { __DSH_DESKTOP_IPC__?: boolean }).__DSH_DESKTOP_IPC__
+})
 
 const t: ModelsSectionInjected['t'] = key => en[key]
 
@@ -74,6 +77,7 @@ function scriptedFace(options: {
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
+  capture?: ReturnType<typeof vi.fn>
 } = {}) {
   const providers = options.providers ?? {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
@@ -82,6 +86,7 @@ function scriptedFace(options: {
   const discover = options.discover ?? vi.fn(() => Promise.resolve(ok({ models: [] })))
   const mutate = options.mutate ?? vi.fn(() => Promise.resolve(ok(namespace)))
   const set = options.set ?? vi.fn(() => Promise.resolve(ok({})))
+  const capture = options.capture ?? vi.fn(() => Promise.resolve(ok({ stored: true })))
   const face = {
     llm: {
       providers: vi.fn(() => Promise.resolve(ok({
@@ -105,13 +110,14 @@ function scriptedFace(options: {
     },
     credentials: {
       describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
-        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true, input: 'value' as const }])),
       }))),
       set,
+      capture,
       unset: vi.fn(),
     },
   }
-  return { face, discover, mutate, set, namespace }
+  return { face, discover, mutate, set, capture, namespace }
 }
 
 type WireFace = ConstructorParameters<typeof ModelsSettingsStore>[0]
@@ -706,6 +712,24 @@ describe('hand-declared providers', () => {
       expectedRevision: 7,
     })
     expect(set).toHaveBeenCalledWith({ ref: 'ACME_GATEWAY_API_KEY', value: 'gw-key' })
+  })
+
+  it('uses native secure capture without rendering a password field on desktop', async () => {
+    ;(globalThis as { __DSH_DESKTOP_IPC__?: boolean }).__DSH_DESKTOP_IPC__ = true
+    const { mutate, set, capture, onClose } = mountCard()
+
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'native-gateway' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://native.example/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'native-model' } })
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+    expect(screen.getByText(en.keyCaptureOnCreate)).toBeTruthy()
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ apiKeyEnv: 'NATIVE_GATEWAY_API_KEY' })
+    expect(capture).toHaveBeenCalledWith({ ref: 'NATIVE_GATEWAY_API_KEY' })
+    expect(set).not.toHaveBeenCalled()
   })
 
   it('scopes each card to fields a provider can actually own', async () => {

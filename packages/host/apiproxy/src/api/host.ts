@@ -36,8 +36,9 @@ export interface DirectoryListing {
 export interface HostApi {
   /**
    * One-shot host snapshot. Empty payload uses the literal `{}` (extend in place when fields arrive).
-   * version = the host app's (apps/cli) package.json version; cwd = the host process working
-   * directory (root for session persistence and tool execution); provider/model = the defaults
+   * version = the Rust application version when Desktop native metadata is mounted, otherwise
+   * the Host app's (`apps/cli`) package version; cwd = the host process working directory (root
+   * for session persistence and tool execution); provider/model = the defaults
    * applied when a new agent doesn't specify them explicitly, absent when the host configures
    * no explicit default (the adapter falls back internally);
    * attachedSessions = count of currently attached sessions (those with a live agent);
@@ -50,7 +51,25 @@ export interface HostApi {
     model?: string
     attachedSessions: number
     canOpenPath: boolean
+    desktop?: {
+      /** User-visible application name read from the Rust package. */
+      name: string
+      /** Platform registration identifier read from the Rust package. */
+      identifier: string
+    }
   }>>
+
+  /** Open one external HTTP(S) URL through the Rust shell's URL policy. */
+  openExternal(
+    request: RpcRequest<{ url: string }>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<{ opened: true }>>
+
+  /** Send a bounded plain-text operating-system notification through Rust. */
+  notify(
+    request: RpcRequest<{ title: string; body: string }>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<{ sent: true }>>
 
   /**
    * Open the operating system's single-directory picker; cancellation returns

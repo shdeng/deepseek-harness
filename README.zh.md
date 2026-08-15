@@ -38,7 +38,7 @@ pnpm dsh web
 
 ### 从源码运行 Desktop App
 
-Desktop App 是一个 Tauri 概念验证：它把现有 Node.js Host 作为子进程启动，并在系统 WebView 中显示同一套 Web UI。运行前请安装 Node.js、pnpm、Rust 和 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。
+Desktop App 是一个 Tauri 应用：它监督现有 Node.js Host，并在系统 WebView 中显示共享图形客户端。从源码运行前请安装 Node.js、pnpm、Rust 和 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。
 
 ```sh
 git clone https://github.com/deepseek-ai/deepseek-harness.git
@@ -47,7 +47,7 @@ pnpm install
 pnpm desktop:dev
 ```
 
-Desktop App 当前是仅从源码运行的开发构建，不是已打包的安装程序。PoC 使用临时回环 HTTP 连接；拟议的 release 架构会改用桌面 IPC 和内置 Node 运行时。详见 [Desktop App 指南](apps/desktop/README.md)与[桌面壳设计](.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md)。
+v0.3 Desktop 基础通过 Tauri IPC 和 Rust–Node 私有协议承载产品流量，嵌入应用入口，通过应用自有 custom protocol 加载动态客户端 bundle，并且不让 Host 打开监听套接字。Rust 现已通过 Host capability／API Consumer 持有原生目录选择、操作系统凭据存储、受控外链、通知、应用元数据和 `deepseek-harness://session/<id>` 深链接；WebView 没有这些操作的直接插件权限。Windows release 构建携带自身 Node 运行时、凭据动态库和 Desktop 专属 Host 闭包。详见 [Desktop App 指南](apps/desktop/README.md)与[桌面壳设计](.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md)。
 
 ## 社区与支持
 

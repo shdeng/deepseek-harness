@@ -380,8 +380,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'clientModules',
-    summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap.',
-    description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
+    summary: 'The client plugin table service: incremental `dsh.client` scan, wire composition, and artifact reads.',
+    description: 'The client plugin table service: incremental `dsh.client` scan, wire composition, and artifact reads. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
     methods: [
       {
         signature: 'graph(): WebBootGraph',
@@ -394,6 +394,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Absolute path of an entry\'s client bundle.',
         parameters: [{ name: 'id', description: 'entry id (package name).' }],
         returns: 'the path, or undefined for an unknown id.',
+      },
+      {
+        signature: 'async readAsset(id: string, sourceMap: boolean = false): Promise<ClientModuleAsset | undefined>',
+        description: 'Read one registered client artifact without exposing its filesystem path.',
+        parameters: [{ name: 'id', description: 'entry id from the current graph.' }, { name: 'sourceMap', description: 'whether to read the adjacent source map instead of JavaScript.' }],
+        returns: 'artifact bytes and media type, or undefined when the entry or artifact is unavailable.',
       },
       {
         signature: 'rebuilt(id: string): string | undefined',
@@ -522,6 +528,53 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract unset(ref: CredentialRef): Promise<void>',
         description: 'Remove one reference from the provider-managed writable source; removing an absent reference is a no-op. Rejects while a read-only source shadows the reference, like set.',
         parameters: [{ name: 'ref', description: 'the reference to remove.' }],
+      },
+      {
+        signature: 'inputMode(): CredentialInputMode',
+        description: 'How configuration surfaces may supply new values. File-backed providers accept a value; desktop system-vault providers open native secure input.',
+        parameters: [],
+        returns: 'the provider\'s input mode.',
+      },
+      {
+        signature: 'capture(ref: CredentialRef, signal: AbortSignal): Promise<boolean>',
+        description: 'Ask the provider-owned native UI to capture and store one credential. Value-input providers reject this operation.',
+        parameters: [{ name: 'ref', description: 'opaque reference whose value is being captured.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'true when stored, or false when the operator cancels.',
+      },
+    ],
+  },
+  {
+    key: 'desktopNative',
+    summary: 'Native desktop operations that the Rust shell provides to the Node Host.',
+    description: 'Native desktop operations that the Rust shell provides to the Node Host.',
+    methods: [
+      {
+        signature: 'abstract pickDirectory(signal: AbortSignal): Promise<string | null>',
+        description: 'Open the operating system directory chooser.',
+        parameters: [{ name: 'signal', description: 'caller lifetime; an aborted call discards any later chooser result.' }],
+        returns: 'the selected absolute path, or null when the operator cancels.',
+      },
+      {
+        signature: 'abstract captureCredential(ref: CredentialRef, signal: AbortSignal): Promise<boolean>',
+        description: 'Prompt outside the WebView for a credential and store it in the operating system vault.',
+        parameters: [{ name: 'ref', description: 'opaque credential handle used as the vault account name.' }, { name: 'signal', description: 'caller lifetime; abort discards any later prompt result.' }],
+        returns: 'true when a value was stored, or false when the operator cancels.',
+      },
+      {
+        signature: 'abstract openExternal(url: string, signal: AbortSignal): Promise<void>',
+        description: 'Open one operator-visible web URL after Rust applies the desktop URL policy.',
+        parameters: [{ name: 'url', description: 'absolute http or https URL without embedded credentials.' }, { name: 'signal', description: 'caller lifetime.' }],
+      },
+      {
+        signature: 'abstract notify(notification: DesktopNotification, signal: AbortSignal): Promise<void>',
+        description: 'Send one native operating-system notification.',
+        parameters: [{ name: 'notification', description: 'bounded plain-text title and body.' }, { name: 'signal', description: 'caller lifetime.' }],
+      },
+      {
+        signature: 'abstract metadata(signal: AbortSignal): Promise<DesktopApplicationMetadata>',
+        description: 'Read metadata from the running desktop package.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'metadata owned by the Rust application package.',
       },
     ],
   },
@@ -2342,6 +2395,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'ref', description: 'the reference whose stored value changed.' }],
   },
   {
+    name: 'desktopNative/deep-link',
+    mode: 'emit',
+    signature: '\'desktopNative/deep-link\'(sessionId: string): void',
+    summary: 'The Rust shell accepted a registered application deep link.',
+    description: 'The Rust shell accepted a registered application deep link.',
+    parameters: [{ name: 'sessionId', description: 'opaque session selected by the deep link.' }],
+  },
+  {
     name: 'domain/changed',
     mode: 'emit',
     signature: '\'domain/changed\'(change: DomainChanged): void',
@@ -2738,6 +2799,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
   },
   {
+    name: 'ClientModuleAsset',
+    declaration: 'export interface ClientModuleAsset {\n    body: Uint8Array;\n    contentType: string;\n}',
+  },
+  {
     name: 'ClientResponse',
     declaration: 'export interface ClientResponse {\n    type: \'client-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -2918,8 +2983,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CredentialInfo {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
   },
   {
+    name: 'CredentialInputMode',
+    declaration: 'export type CredentialInputMode = \'value\' | \'native\';',
+  },
+  {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'DesktopApplicationMetadata',
+    declaration: 'export interface DesktopApplicationMetadata {\n    name: string;\n    version: string;\n    identifier: string;\n}',
+  },
+  {
+    name: 'DesktopNotification',
+    declaration: 'export interface DesktopNotification {\n    title: string;\n    body: string;\n}',
   },
   {
     name: 'DiffCallView',

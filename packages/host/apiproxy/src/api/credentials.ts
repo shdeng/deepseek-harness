@@ -17,6 +17,8 @@ export interface CredentialView {
   source?: string
   /** Whether `credentials.set`/`credentials.unset` can affect this reference. */
   writable: boolean
+  /** Whether this surface accepts a value or opens provider-owned native secure input. */
+  input: 'value' | 'native'
 }
 
 /** Credentials-domain unary methods (the map keys credentials.* of RpcMethodMap). */
@@ -35,6 +37,9 @@ export interface CredentialsApi {
    * resolution keeps returning the shadowing value.
    */
   set(request: RpcRequest<{ ref: string; value: string }>): Promise<RpcResponse<{}>>
+
+  /** Capture a value through provider-owned native secure input; no value crosses this wire. */
+  capture(request: RpcRequest<{ ref: string }>, signal: AbortSignal): Promise<RpcResponse<{ stored: boolean }>>
 
   /**
    * Remove one credential from the writable layer; same shadowing rejection

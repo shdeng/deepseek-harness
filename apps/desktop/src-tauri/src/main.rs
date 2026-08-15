@@ -10,25 +10,56 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use command_group::{CommandGroup, GroupChild};
-use ipc::{DesktopRequest, ProtocolLine, SidecarBridge};
-use tauri::{Manager, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use ipc::{
+    validate_asset_digest, webview_boot_manifest, DesktopRequest, NativeRequest, ProtocolLine,
+    SidecarBridge,
+};
+use tauri::{http, Manager, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-const HOST_URL_PREFIX: &str = "dsh web: ";
+const DESKTOP_INITIALIZATION_SCRIPT: &str = r#"
+window.__DSH_DESKTOP_IPC__ = true;
+(() => {
+  const showStatus = (message) => {
+    const render = () => {
+      const root = document.getElementById('root');
+      if (root !== null && root.childElementCount === 0) root.textContent = String(message);
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', render, { once: true });
+    } else {
+      render();
+    }
+  };
+  window.__DSH_DESKTOP_SET_STATUS__ = showStatus;
+  window.addEventListener('error', (event) => {
+    showStatus(event.error?.message ?? event.message ?? 'Desktop UI failed to start');
+  }, true);
+  window.addEventListener('unhandledrejection', (event) => {
+    showStatus(event.reason?.message ?? event.reason ?? 'Desktop UI failed to start');
+  });
+})();
+"#;
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_notification::NotificationExt;
+use tokio::sync::watch;
+
 const STDERR_TAIL_LINES: usize = 40;
 const DEFAULT_HOST_SHUTDOWN_GRACE_MS: u64 = 7_000;
 const MAX_HOST_SHUTDOWN_GRACE_MS: u64 = 60_000;
 const HOST_SHUTDOWN_GRACE_ENV: &str = "DSH_DESKTOP_SHUTDOWN_GRACE_MS";
 const SUPERVISED_STDIN_ENV: &str = "DSH_SHUTDOWN_ON_STDIN_EOF";
 const DESKTOP_SIDECAR_ENV: &str = "DSH_DESKTOP_SIDECAR";
+static ASSET_REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug)]
 struct HostLaunch {
@@ -36,6 +67,7 @@ struct HostLaunch {
     cli: PathBuf,
     cwd: PathBuf,
     shutdown_grace: Duration,
+    credential_library: PathBuf,
 }
 
 impl HostLaunch {
@@ -56,6 +88,18 @@ impl HostLaunch {
                 .join("runtime")
                 .join(if cfg!(windows) { "node.exe" } else { "node" });
         let packaged_host = resource_dir.join("host");
+        let credential_library_name = if cfg!(windows) {
+            "dsh_credential_store.dll"
+        } else if cfg!(target_os = "macos") {
+            "libdsh_credential_store.dylib"
+        } else {
+            "libdsh_credential_store.so"
+        };
+        let packaged_credential_library =
+            resource_dir.join("runtime").join(credential_library_name);
+        let development_credential_library = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../native-credential-store/target/debug")
+            .join(credential_library_name);
         let packaged_cli = packaged_host.join("lib/bin.js");
         let node = env::var_os("DSH_DESKTOP_NODE")
             .map(PathBuf::from)
@@ -99,11 +143,23 @@ impl HostLaunch {
         }
 
         let shutdown_grace = resolve_shutdown_grace()?;
+        let credential_library = if packaged_credential_library.is_file() {
+            packaged_credential_library
+        } else {
+            development_credential_library
+        };
+        if !credential_library.is_file() {
+            return Err(format!(
+                "desktop credential library not found at {}. Run `pnpm --dir apps/desktop prepare:native`",
+                credential_library.display()
+            ));
+        }
         Ok(Self {
             node,
             cli,
             cwd,
             shutdown_grace,
+            credential_library,
         })
     }
 
@@ -114,10 +170,11 @@ impl HostLaunch {
             // Node opt-in; config-only HMR uses that map in release profiles.
             .arg("--expose-internals")
             .arg(&self.cli)
-            .args(["web", "--host", "127.0.0.1", "--port", "0"])
+            .args(["--profile", "desktop"])
             .current_dir(&self.cwd)
             .env(SUPERVISED_STDIN_ENV, "1")
             .env(DESKTOP_SIDECAR_ENV, "1")
+            .env("DSH_DESKTOP_CREDENTIAL_LIBRARY", &self.credential_library)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -267,15 +324,21 @@ fn spawn_process_group(command: &mut Command) -> std::io::Result<GroupChild> {
 
 #[derive(Debug, Default)]
 struct NavigationFence {
-    allowed_port: RwLock<Option<u16>>,
+    #[cfg(debug_assertions)]
+    development_url: Option<Url>,
 }
 
 impl NavigationFence {
-    fn publish(&self, port: u16) {
-        *self
-            .allowed_port
-            .write()
-            .expect("navigation port lock poisoned") = Some(port);
+    fn new(development_url: Option<Url>) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            Self { development_url }
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = development_url;
+            Self {}
+        }
     }
 
     fn allows(&self, url: &Url) -> bool {
@@ -285,38 +348,42 @@ impl NavigationFence {
         if matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost") {
             return true;
         }
-        url.scheme() == "http"
-            && url.host_str() == Some("127.0.0.1")
-            && url.port()
-                == *self
-                    .allowed_port
-                    .read()
-                    .expect("navigation port lock poisoned")
+        #[cfg(debug_assertions)]
+        if self
+            .development_url
+            .as_ref()
+            .is_some_and(|development_url| development_url.origin() == url.origin())
+        {
+            return true;
+        }
+        false
     }
+}
+
+#[derive(Clone, Debug)]
+enum BootStatus {
+    Starting,
+    Ready(serde_json::Value),
+    Failed(String),
 }
 
 #[derive(Debug)]
 struct HostState {
     child: Mutex<Option<HostProcess>>,
-    ready: AtomicBool,
-    protocol_ready: AtomicBool,
     shutting_down: AtomicBool,
     stderr_tail: Mutex<VecDeque<String>>,
-    navigation: Arc<NavigationFence>,
-    pending_url: Mutex<Option<Url>>,
+    boot: watch::Sender<BootStatus>,
     bridge: SidecarBridge,
 }
 
 impl HostState {
-    fn new(navigation: Arc<NavigationFence>) -> Self {
+    fn new() -> Self {
+        let (boot, _) = watch::channel(BootStatus::Starting);
         Self {
             child: Mutex::new(None),
-            ready: AtomicBool::new(false),
-            protocol_ready: AtomicBool::new(false),
             shutting_down: AtomicBool::new(false),
             stderr_tail: Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)),
-            navigation,
-            pending_url: Mutex::new(None),
+            boot,
             bridge: SidecarBridge::new(),
         }
     }
@@ -346,24 +413,56 @@ impl HostState {
                 match line {
                     Ok(line) => {
                         match stdout_state.bridge.handle_line(&stdout_app, &line) {
-                            Ok(ProtocolLine::Ready) => {
-                                stdout_state.publish_protocol_ready(&stdout_app);
+                            Ok(ProtocolLine::Ready(manifest)) => {
+                                stdout_state.publish_ready(manifest);
+                                continue;
+                            }
+                            Ok(ProtocolLine::NativeRequest(request)) => {
+                                let native_state = Arc::clone(&stdout_state);
+                                let native_app = stdout_app.clone();
+                                thread::spawn(move || {
+                                    let (id, result) = match request {
+                                        NativeRequest::PickDirectory { id } => {
+                                            let result = pick_directory(&native_app)
+                                                .map(serde_json::Value::from);
+                                            (id, result)
+                                        }
+                                        NativeRequest::CaptureCredential { id, credential } => {
+                                            let result = capture_credential(&credential)
+                                                .map(serde_json::Value::from);
+                                            (id, result)
+                                        }
+                                        NativeRequest::OpenExternal { id, url } => {
+                                            let result = open_external(&url)
+                                                .map(|()| serde_json::Value::Null);
+                                            (id, result)
+                                        }
+                                        NativeRequest::Notify { id, title, body } => {
+                                            let result = notify(&native_app, &title, &body)
+                                                .map(|()| serde_json::Value::Null);
+                                            (id, result)
+                                        }
+                                        NativeRequest::Metadata { id } => {
+                                            (id, Ok(application_metadata(&native_app)))
+                                        }
+                                    };
+                                    if let Err(error) =
+                                        native_state.bridge.send_native_response(&id, result)
+                                    {
+                                        report_status(&native_app, &error);
+                                    }
+                                });
                                 continue;
                             }
                             Ok(ProtocolLine::Handled) => continue,
                             Ok(ProtocolLine::NotProtocol) => {}
                             Err(error) => {
+                                stdout_state.fail_boot(error.clone());
                                 report_status(&stdout_app, &error);
                                 break;
                             }
                         }
                         println!("[dsh-host] {line}");
-                        if let Some(result) = parse_host_url(&line) {
-                            match result {
-                                Ok(url) => stdout_state.publish_host_url(&stdout_app, url),
-                                Err(error) => report_status(&stdout_app, &error),
-                            }
-                        }
                     }
                     Err(error) => {
                         report_status(
@@ -398,49 +497,13 @@ impl HostState {
         Ok(())
     }
 
-    fn publish_host_url(&self, app: &tauri::AppHandle, url: Url) {
-        *self.pending_url.lock().expect("Host URL lock poisoned") = Some(url);
-        self.navigate_when_ready(app);
+    fn publish_ready(&self, manifest: serde_json::Value) {
+        self.boot.send_replace(BootStatus::Ready(manifest));
     }
 
-    fn publish_protocol_ready(&self, app: &tauri::AppHandle) {
-        self.protocol_ready.store(true, Ordering::Release);
-        self.navigate_when_ready(app);
-    }
-
-    fn navigate_when_ready(&self, app: &tauri::AppHandle) {
-        if !self.protocol_ready.load(Ordering::Acquire) || self.ready.load(Ordering::Acquire) {
-            return;
-        }
-        let url = self
-            .pending_url
-            .lock()
-            .expect("Host URL lock poisoned")
-            .clone();
-        let Some(url) = url else {
-            return;
-        };
-        if self
-            .ready
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return;
-        }
-        self.navigation
-            .publish(url.port().expect("validated Host URL has a port"));
-        let Some(window) = app.get_webview_window("main") else {
-            report_status(
-                app,
-                "desktop window disappeared before the Node Host became ready",
-            );
-            return;
-        };
-        if let Err(error) = window.navigate(url) {
-            report_status(
-                app,
-                &format!("failed to navigate to the Node Host: {error}"),
-            );
+    fn fail_boot(&self, message: String) {
+        if matches!(*self.boot.borrow(), BootStatus::Starting) {
+            self.boot.send_replace(BootStatus::Failed(message));
         }
     }
 
@@ -500,6 +563,7 @@ impl HostState {
                     &app,
                     &format!("Node Host exited unexpectedly ({status}).{detail}"),
                 );
+                self.fail_boot(format!("Node Host exited unexpectedly ({status}).{detail}"));
             }
             return;
         }
@@ -543,31 +607,34 @@ fn desktop_ipc_cancel(state: State<'_, Arc<HostState>>, id: String) -> Result<()
     state.bridge.cancel(&id)
 }
 
+#[tauri::command]
+async fn desktop_boot_manifest(
+    state: State<'_, Arc<HostState>>,
+) -> Result<serde_json::Value, String> {
+    let mut boot = state.boot.subscribe();
+    loop {
+        match boot.borrow().clone() {
+            BootStatus::Ready(manifest) => {
+                return webview_boot_manifest(
+                    manifest,
+                    cfg!(any(target_os = "windows", target_os = "android")),
+                )
+            }
+            BootStatus::Failed(error) => return Err(error),
+            BootStatus::Starting => {}
+        }
+        boot.changed()
+            .await
+            .map_err(|_| "desktop Host boot state closed before readiness".to_owned())?;
+    }
+}
+
 fn absolute_path(path: PathBuf, base: &Path) -> PathBuf {
     if path.is_absolute() {
         path
     } else {
         base.join(path)
     }
-}
-
-fn parse_host_url(line: &str) -> Option<Result<Url, String>> {
-    let value = line.strip_prefix(HOST_URL_PREFIX)?;
-    Some(
-        Url::parse(value)
-            .map_err(|error| format!("Node Host published an invalid URL: {error}"))
-            .and_then(|url| {
-                if url.scheme() != "http"
-                    || url.host_str() != Some("127.0.0.1")
-                    || url.port().is_none()
-                {
-                    return Err(format!(
-                        "Node Host published a URL outside the desktop loopback policy: {url}"
-                    ));
-                }
-                Ok(url)
-            }),
-    )
 }
 
 fn report_status(app: &tauri::AppHandle, message: &str) {
@@ -579,8 +646,96 @@ fn report_status(app: &tauri::AppHandle, message: &str) {
     let _ = window.eval(format!("window.__DSH_DESKTOP_SET_STATUS__?.({encoded})"));
 }
 
-#[tauri::command]
-fn desktop_pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+fn protocol_error(
+    status: http::StatusCode,
+    message: impl Into<Vec<u8>>,
+) -> http::Response<Vec<u8>> {
+    http::Response::builder()
+        .status(status)
+        .header(http::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header(http::header::CACHE_CONTROL, "no-store")
+        .body(message.into())
+        .expect("static custom-protocol response is valid")
+}
+
+async fn read_protocol_asset(
+    host: Arc<HostState>,
+    window_label: String,
+    uri: http::Uri,
+) -> http::Response<Vec<u8>> {
+    if !matches!(uri.host(), Some("localhost" | "dsh-plugin.localhost")) {
+        return protocol_error(
+            http::StatusCode::FORBIDDEN,
+            b"unauthorized asset authority".to_vec(),
+        );
+    }
+    let Some(asset) = uri
+        .path()
+        .strip_prefix('/')
+        .and_then(|path| path.strip_suffix("/client.js"))
+    else {
+        return protocol_error(
+            http::StatusCode::NOT_FOUND,
+            b"client asset not found".to_vec(),
+        );
+    };
+    if validate_asset_digest(asset).is_err() {
+        return protocol_error(
+            http::StatusCode::NOT_FOUND,
+            b"client asset not found".to_vec(),
+        );
+    }
+    let id = format!(
+        "asset-{}",
+        ASSET_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    );
+    let result = host
+        .bridge
+        .request(
+            DesktopRequest::AssetRead {
+                id,
+                asset: asset.to_owned(),
+            },
+            window_label,
+        )
+        .await;
+    let Ok(result) = result else {
+        return protocol_error(
+            http::StatusCode::BAD_GATEWAY,
+            result.expect_err("error branch has an error").into_bytes(),
+        );
+    };
+    let Some(content_type) = result
+        .get("contentType")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return protocol_error(
+            http::StatusCode::BAD_GATEWAY,
+            b"Host returned no asset media type".to_vec(),
+        );
+    };
+    let Some(body) = result.get("body").and_then(serde_json::Value::as_str) else {
+        return protocol_error(
+            http::StatusCode::BAD_GATEWAY,
+            b"Host returned no asset body".to_vec(),
+        );
+    };
+    let Ok(body) = BASE64.decode(body) else {
+        return protocol_error(
+            http::StatusCode::BAD_GATEWAY,
+            b"Host returned invalid asset bytes".to_vec(),
+        );
+    };
+    http::Response::builder()
+        .status(http::StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, content_type)
+        .header(http::header::CACHE_CONTROL, "no-cache")
+        .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(body)
+        .expect("validated custom-protocol response is valid")
+}
+
+fn pick_directory(app: &tauri::AppHandle) -> Result<Option<String>, String> {
     app.dialog()
         .file()
         .blocking_pick_folder()
@@ -597,12 +752,111 @@ fn desktop_pick_directory(app: tauri::AppHandle) -> Result<Option<String>, Strin
         .transpose()
 }
 
+fn capture_credential(reference: &str) -> Result<bool, String> {
+    let Some(secret) = tinyfiledialogs::password_box(
+        "DeepSeek Harness credential",
+        &format!("Enter the value for {reference}. It will be stored in the operating system credential vault."),
+    ) else {
+        return Ok(false);
+    };
+    dsh_credential_store::set(reference, &secret)?;
+    Ok(true)
+}
+
+pub(crate) fn open_external(value: &str) -> Result<(), String> {
+    let url = Url::parse(value).map_err(|error| format!("external URL is invalid: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err("external URL must be an absolute HTTP(S) URL without credentials".to_owned());
+    }
+    webbrowser::open(url.as_str())
+        .map(drop)
+        .map_err(|error| format!("failed to open external URL: {error}"))
+}
+
+fn notify(app: &tauri::AppHandle, title: &str, body: &str) -> Result<(), String> {
+    if title.is_empty() || title.len() > 128 || body.len() > 1024 {
+        return Err("notification text is outside its bounds".to_owned());
+    }
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|error| format!("failed to show desktop notification: {error}"))
+}
+
+fn application_metadata(app: &tauri::AppHandle) -> serde_json::Value {
+    serde_json::json!({
+        "name": app.package_info().name,
+        "version": app.package_info().version.to_string(),
+        "identifier": app.config().identifier,
+    })
+}
+
+fn accept_deep_link(app: &tauri::AppHandle, host: &HostState, url: &Url) -> Result<(), String> {
+    let session_id = deep_link_session_id(url)?;
+    host.bridge.send_deep_link(session_id)?;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    Ok(())
+}
+
+fn deep_link_session_id(url: &Url) -> Result<&str, String> {
+    if url.scheme() != "deepseek-harness"
+        || url.host_str() != Some("session")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("deep link is outside the registered session URL format".to_owned());
+    }
+    let path = url.path().strip_prefix('/').unwrap_or_default();
+    if path.is_empty()
+        || path.len() > 256
+        || !path
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._~-".contains(&byte))
+    {
+        return Err("deep-link session id must be bounded URL-safe ASCII".to_owned());
+    }
+    Ok(path)
+}
+
+fn install_deep_links(app: &tauri::AppHandle, host: Arc<HostState>) -> Result<(), String> {
+    let current = app
+        .deep_link()
+        .get_current()
+        .map_err(|error| format!("failed to read startup deep link: {error}"))?;
+    if let Some(urls) = current {
+        for url in urls {
+            accept_deep_link(app, &host, &url)?;
+        }
+    }
+    let event_app = app.clone();
+    app.deep_link().on_open_url(move |event| {
+        for url in event.urls() {
+            if let Err(error) = accept_deep_link(&event_app, &host, &url) {
+                report_status(&event_app, &error);
+            }
+        }
+    });
+    Ok(())
+}
+
 fn create_window(
     app: &tauri::AppHandle,
     navigation: Arc<NavigationFence>,
 ) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-        .initialization_script("window.__DSH_DESKTOP_IPC__ = true;")
+        .initialization_script(DESKTOP_INITIALIZATION_SCRIPT)
         .title("DeepSeek Harness Desktop")
         .inner_size(1280.0, 820.0)
         .min_inner_size(900.0, 640.0)
@@ -611,22 +865,40 @@ fn create_window(
 }
 
 fn main() {
-    let navigation = Arc::new(NavigationFence::default());
-    let host = Arc::new(HostState::new(Arc::clone(&navigation)));
+    let host = Arc::new(HostState::new());
     let setup_host = Arc::clone(&host);
-    let setup_navigation = Arc::clone(&navigation);
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
+        .register_asynchronous_uri_scheme_protocol("dsh-plugin", |context, request, responder| {
+            let host = context
+                .app_handle()
+                .state::<Arc<HostState>>()
+                .inner()
+                .clone();
+            let window_label = context.webview_label().to_owned();
+            let uri = request.uri().clone();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(read_protocol_asset(host, window_label, uri).await);
+            });
+        })
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::clone(&host))
         .invoke_handler(tauri::generate_handler![
-            desktop_pick_directory,
             desktop_ipc_request,
-            desktop_ipc_cancel
+            desktop_ipc_cancel,
+            desktop_boot_manifest
         ])
         .setup(move |app| {
-            create_window(app.handle(), Arc::clone(&setup_navigation))?;
+            let navigation = Arc::new(NavigationFence::new(app.config().build.dev_url.clone()));
+            create_window(app.handle(), navigation)?;
             if let Err(error) = setup_host.start(app.handle().clone()) {
+                setup_host.fail_boot(error.clone());
+                report_status(app.handle(), &error);
+            }
+            if let Err(error) = install_deep_links(app.handle(), Arc::clone(&setup_host)) {
                 report_status(app.handle(), &error);
             }
             update::start_update_check(app.handle().clone());
@@ -693,36 +965,63 @@ mod tests {
     }
 
     #[test]
-    fn parses_loopback_host_url() {
-        let url = parse_host_url("dsh web: http://127.0.0.1:4123/")
-            .expect("matching log line")
-            .expect("valid URL");
-        assert_eq!(url.port(), Some(4123));
-    }
-
-    #[test]
-    fn rejects_host_url_without_explicit_port() {
-        let error = parse_host_url("dsh web: http://127.0.0.1/")
-            .expect("matching log line")
-            .expect_err("port is required");
-        assert!(error.contains("loopback policy"));
-    }
-
-    #[test]
-    fn rejects_non_loopback_host_url() {
-        let error = parse_host_url("dsh web: http://localhost:4123/")
-            .expect("matching log line")
-            .expect_err("literal loopback address is required");
-        assert!(error.contains("loopback policy"));
-    }
-
-    #[test]
-    fn navigation_fence_allows_only_published_host_port() {
+    fn navigation_fence_allows_only_the_tauri_application_origin() {
         let fence = NavigationFence::default();
-        fence.publish(4123);
-        assert!(fence.allows(&Url::parse("http://127.0.0.1:4123/").unwrap()));
-        assert!(!fence.allows(&Url::parse("http://127.0.0.1:4124/").unwrap()));
+        assert!(fence.allows(&Url::parse("tauri://localhost/").unwrap()));
+        assert!(fence.allows(&Url::parse("http://tauri.localhost/").unwrap()));
+        assert!(!fence.allows(&Url::parse("http://127.0.0.1:4123/").unwrap()));
         assert!(!fence.allows(&Url::parse("https://example.com/").unwrap()));
+    }
+
+    #[test]
+    fn navigation_fence_allows_only_the_configured_development_origin() {
+        let fence = NavigationFence::new(Some(Url::parse("http://127.0.0.1:1430/").unwrap()));
+        assert!(fence.allows(&Url::parse("http://127.0.0.1:1430/session/1").unwrap()));
+        assert!(!fence.allows(&Url::parse("http://127.0.0.1:1431/").unwrap()));
+        assert!(!fence.allows(&Url::parse("http://localhost:1430/").unwrap()));
+    }
+
+    #[test]
+    fn deep_links_accept_only_the_registered_session_url() {
+        assert_eq!(
+            deep_link_session_id(&Url::parse("deepseek-harness://session/session-1234").unwrap()),
+            Ok("session-1234")
+        );
+        assert!(
+            deep_link_session_id(&Url::parse("deepseek-harness://settings/").unwrap()).is_err()
+        );
+        assert!(deep_link_session_id(
+            &Url::parse("deepseek-harness://session/session-1234?source=web").unwrap()
+        )
+        .is_err());
+        assert!(deep_link_session_id(
+            &Url::parse("https://example.com/session/session-1234").unwrap()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn external_url_policy_rejects_non_web_and_credentialed_urls() {
+        assert!(open_external("file:///etc/passwd").is_err());
+        assert!(open_external("https://user:secret@example.com/").is_err());
+    }
+
+    #[test]
+    fn desktop_csp_limits_dynamic_code_to_local_application_resources() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("Tauri config is JSON");
+        let csp = config["app"]["security"]["csp"]
+            .as_str()
+            .expect("desktop CSP is configured");
+
+        assert!(
+            csp.contains("script-src 'self' 'unsafe-eval' dsh-plugin: http://dsh-plugin.localhost")
+        );
+        assert!(csp.contains("font-src 'self' data:"));
+        assert!(csp.contains("img-src 'self' data:"));
+        assert!(csp.contains("style-src 'self' 'unsafe-inline'"));
+        assert!(!csp.contains("https:"));
+        assert!(!csp.contains("http:;"));
     }
 
     #[test]

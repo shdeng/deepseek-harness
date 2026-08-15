@@ -7,7 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Url};
 use tokio::sync::oneshot;
 
 pub const PROTOCOL_PREFIX: &str = "DSH-IPC/1 ";
@@ -18,6 +18,10 @@ const MAX_CANCELLED_REQUESTS: usize = 512;
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "op", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum DesktopRequest {
+    AssetRead {
+        id: String,
+        asset: String,
+    },
     Fetch {
         id: String,
         path: String,
@@ -42,13 +46,16 @@ pub enum StreamName {
 impl DesktopRequest {
     pub fn id(&self) -> &str {
         match self {
-            Self::Fetch { id, .. } | Self::StreamOpen { id, .. } => id,
+            Self::AssetRead { id, .. } | Self::Fetch { id, .. } | Self::StreamOpen { id, .. } => id,
         }
     }
 
     fn validate(&self) -> Result<(), String> {
         validate_id(self.id())?;
         match self {
+            Self::AssetRead { asset, .. } => {
+                validate_asset_digest(asset)?;
+            }
             Self::Fetch {
                 path, method, body, ..
             } => {
@@ -60,6 +67,23 @@ impl DesktopRequest {
                 }
                 if matches!(method.as_str(), "GET" | "HEAD") && body.is_some() {
                     return Err("desktop IPC GET and HEAD requests cannot carry a body".to_owned());
+                }
+                if path == "/api/credentials.set" {
+                    return Err("desktop IPC does not carry plaintext credential writes".to_owned());
+                }
+                if path == "/api/llm.discoverModels" {
+                    let payload = body.as_deref().ok_or_else(|| {
+                        "desktop IPC model discovery has no request body".to_owned()
+                    })?;
+                    let envelope: Value = serde_json::from_str(payload).map_err(|_| {
+                        "desktop IPC model discovery request body is not JSON".to_owned()
+                    })?;
+                    if envelope.pointer("/payload/apiKey").is_some() {
+                        return Err(
+                            "desktop IPC model discovery accepts credential handles only"
+                                .to_owned(),
+                        );
+                    }
                 }
             }
             Self::StreamOpen { payload, .. } if !payload.is_object() => {
@@ -84,8 +108,32 @@ struct StreamEvent {
 
 pub enum ProtocolLine {
     NotProtocol,
-    Ready,
+    Ready(Value),
+    NativeRequest(NativeRequest),
     Handled,
+}
+
+#[derive(Debug)]
+pub enum NativeRequest {
+    PickDirectory {
+        id: String,
+    },
+    CaptureCredential {
+        id: String,
+        credential: String,
+    },
+    OpenExternal {
+        id: String,
+        url: String,
+    },
+    Notify {
+        id: String,
+        title: String,
+        body: String,
+    },
+    Metadata {
+        id: String,
+    },
 }
 
 #[derive(Debug)]
@@ -216,8 +264,115 @@ impl SidecarBridge {
             .and_then(Value::as_str)
             .ok_or_else(|| "Node Host desktop IPC frame has no kind".to_owned())?;
         match kind {
-            "ready" => Ok(ProtocolLine::Ready),
+            "ready" => {
+                let manifest = frame
+                    .get("manifest")
+                    .cloned()
+                    .ok_or_else(|| "Node Host desktop ready frame has no manifest".to_owned())?;
+                validate_boot_manifest(&manifest)?;
+                Ok(ProtocolLine::Ready(manifest))
+            }
             "shutdown-complete" => {
+                frame_id(&frame)?;
+                Ok(ProtocolLine::Handled)
+            }
+            "native-request" => {
+                let id = frame_id(&frame)?.to_owned();
+                let request = frame
+                    .get("request")
+                    .and_then(Value::as_object)
+                    .ok_or_else(|| "Node Host native request must carry an object".to_owned())?;
+                match request.get("op").and_then(Value::as_str) {
+                    Some("pick-directory") => {
+                        if request.len() != 1 {
+                            return Err(
+                                "Node Host directory request carries unsupported fields".to_owned()
+                            );
+                        }
+                        Ok(ProtocolLine::NativeRequest(NativeRequest::PickDirectory {
+                            id,
+                        }))
+                    }
+                    Some("capture-credential") => {
+                        if request.len() != 2 {
+                            return Err("Node Host credential request carries unsupported fields"
+                                .to_owned());
+                        }
+                        let credential = request
+                            .get("credential")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                "Node Host credential request has no handle".to_owned()
+                            })?;
+                        validate_credential_handle(credential)?;
+                        Ok(ProtocolLine::NativeRequest(
+                            NativeRequest::CaptureCredential {
+                                id,
+                                credential: credential.to_owned(),
+                            },
+                        ))
+                    }
+                    Some("open-external") => {
+                        if request.len() != 2 {
+                            return Err(
+                                "Node Host external-link request carries unsupported fields"
+                                    .to_owned(),
+                            );
+                        }
+                        let url = request.get("url").and_then(Value::as_str).ok_or_else(|| {
+                            "Node Host external-link request has no URL".to_owned()
+                        })?;
+                        if url.len() > 4096 {
+                            return Err("Node Host external-link URL exceeds 4096 bytes".to_owned());
+                        }
+                        Ok(ProtocolLine::NativeRequest(NativeRequest::OpenExternal {
+                            id,
+                            url: url.to_owned(),
+                        }))
+                    }
+                    Some("notify") => {
+                        if request.len() != 3 {
+                            return Err(
+                                "Node Host notification request carries unsupported fields"
+                                    .to_owned(),
+                            );
+                        }
+                        let title =
+                            request
+                                .get("title")
+                                .and_then(Value::as_str)
+                                .ok_or_else(|| {
+                                    "Node Host notification request has no title".to_owned()
+                                })?;
+                        let body =
+                            request.get("body").and_then(Value::as_str).ok_or_else(|| {
+                                "Node Host notification request has no body".to_owned()
+                            })?;
+                        if title.is_empty() || title.len() > 128 || body.len() > 1024 {
+                            return Err(
+                                "Node Host notification text is outside its bounds".to_owned()
+                            );
+                        }
+                        Ok(ProtocolLine::NativeRequest(NativeRequest::Notify {
+                            id,
+                            title: title.to_owned(),
+                            body: body.to_owned(),
+                        }))
+                    }
+                    Some("metadata") => {
+                        if request.len() != 1 {
+                            return Err(
+                                "Node Host metadata request carries unsupported fields".to_owned()
+                            );
+                        }
+                        Ok(ProtocolLine::NativeRequest(NativeRequest::Metadata { id }))
+                    }
+                    other => Err(format!(
+                        "Node Host requested unsupported native operation {other:?}"
+                    )),
+                }
+            }
+            "native-cancel" => {
                 frame_id(&frame)?;
                 Ok(ProtocolLine::Handled)
             }
@@ -306,6 +461,41 @@ impl SidecarBridge {
             .clear();
     }
 
+    pub fn send_native_response(
+        &self,
+        id: &str,
+        result: Result<Value, String>,
+    ) -> Result<(), String> {
+        validate_id(id)?;
+        match result {
+            Ok(value) => self.send(json!({
+                "v": 1,
+                "kind": "native-response",
+                "id": id,
+                "result": value,
+            })),
+            Err(error) => self.send(json!({
+                "v": 1,
+                "kind": "native-response",
+                "id": id,
+                "error": error,
+            })),
+        }
+    }
+
+    /// Send one validated unsolicited native event to the Node Host.
+    pub fn send_deep_link(&self, session_id: &str) -> Result<(), String> {
+        if session_id.is_empty() || session_id.len() > 256 {
+            return Err("desktop deep-link session id is outside its bounds".to_owned());
+        }
+        self.send(json!({
+            "v": 1,
+            "kind": "native-event",
+            "event": "deep-link",
+            "sessionId": session_id,
+        }))
+    }
+
     fn send(&self, frame: Value) -> Result<(), String> {
         let encoded = serde_json::to_string(&frame)
             .map_err(|error| format!("failed to encode desktop IPC frame: {error}"))?;
@@ -382,6 +572,97 @@ impl SidecarBridge {
     }
 }
 
+fn validate_boot_manifest(manifest: &Value) -> Result<(), String> {
+    let object = manifest
+        .as_object()
+        .ok_or_else(|| "Node Host desktop manifest must be an object".to_owned())?;
+    if !object.get("rev").is_some_and(Value::is_string) {
+        return Err("Node Host desktop manifest rev must be a string".to_owned());
+    }
+    let entries = object
+        .get("entries")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Node Host desktop manifest entries must be an array".to_owned())?;
+    if entries.len() > 4096 {
+        return Err("Node Host desktop manifest has too many entries".to_owned());
+    }
+    for entry in entries {
+        let row = entry
+            .as_object()
+            .ok_or_else(|| "Node Host desktop manifest entry must be an object".to_owned())?;
+        let url = row
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "Node Host desktop manifest entry has no URL".to_owned())?;
+        let url = Url::parse(url)
+            .map_err(|_| "Node Host desktop manifest entry has an invalid URL".to_owned())?;
+        if url.scheme() != "dsh-plugin"
+            || url.host_str() != Some("localhost")
+            || url.port().is_some()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.fragment().is_some()
+        {
+            return Err("Node Host desktop manifest entry uses an unauthorized URL".to_owned());
+        }
+        let Some(asset) = url
+            .path()
+            .strip_prefix('/')
+            .and_then(|path| path.strip_suffix("/client.js"))
+        else {
+            return Err("Node Host desktop manifest entry has an invalid asset path".to_owned());
+        };
+        validate_asset_digest(asset)?;
+        let mut query = url.query_pairs();
+        if !query
+            .next()
+            .is_some_and(|(key, value)| key == "rev" && !value.is_empty())
+            || query.next().is_some()
+        {
+            return Err(
+                "Node Host desktop manifest entry has an invalid revision query".to_owned(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Return a validated manifest using the custom-protocol URL form understood by the target WebView.
+pub(crate) fn webview_boot_manifest(
+    mut manifest: Value,
+    http_custom_protocol: bool,
+) -> Result<Value, String> {
+    validate_boot_manifest(&manifest)?;
+    if !http_custom_protocol {
+        return Ok(manifest);
+    }
+    let entries = manifest["entries"]
+        .as_array_mut()
+        .expect("validated desktop manifest entries are an array");
+    for entry in entries {
+        let url = entry["url"]
+            .as_str()
+            .expect("validated desktop manifest entry URL is a string");
+        entry["url"] = Value::String(url.replacen(
+            "dsh-plugin://localhost/",
+            "http://dsh-plugin.localhost/",
+            1,
+        ));
+    }
+    Ok(manifest)
+}
+
+pub(crate) fn validate_asset_digest(asset: &str) -> Result<(), String> {
+    if asset.len() != 64
+        || !asset
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("desktop IPC asset id must be a 64-character lowercase hex digest".to_owned());
+    }
+    Ok(())
+}
+
 fn frame_id(frame: &Value) -> Result<&str, String> {
     let id = frame
         .get("id")
@@ -399,6 +680,19 @@ fn validate_id(id: &str) -> Result<(), String> {
             .all(|byte| byte.is_ascii_alphanumeric() || b"._~-".contains(&byte))
     {
         return Err("desktop IPC request id must be 1-128 URL-safe ASCII characters".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_credential_handle(handle: &str) -> Result<(), String> {
+    let mut bytes = handle.bytes();
+    let Some(first) = bytes.next() else {
+        return Err("desktop credential handle is empty".to_owned());
+    };
+    if !(first.is_ascii_alphabetic() || first == b'_')
+        || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return Err("desktop credential handle must be a POSIX identifier".to_owned());
     }
     Ok(())
 }
@@ -421,10 +715,76 @@ mod tests {
     }
 
     #[test]
+    fn rejects_plaintext_credentials_before_the_node_pipe() {
+        let credential_write = DesktopRequest::Fetch {
+            id: "credential-write".to_owned(),
+            path: "/api/credentials.set".to_owned(),
+            method: "POST".to_owned(),
+            headers: HashMap::new(),
+            body: Some("{\"payload\":{\"ref\":\"KEY\",\"value\":\"secret\"}}".to_owned()),
+        };
+        assert!(credential_write
+            .validate()
+            .unwrap_err()
+            .contains("plaintext credential"));
+
+        let discovery = DesktopRequest::Fetch {
+            id: "credential-discovery".to_owned(),
+            path: "/api/llm.discoverModels".to_owned(),
+            method: "POST".to_owned(),
+            headers: HashMap::new(),
+            body: Some("{\"payload\":{\"settingsNs\":\"llm\",\"apiKey\":\"secret\"}}".to_owned()),
+        };
+        assert!(discovery.validate().unwrap_err().contains("handles only"));
+    }
+
+    #[test]
     fn accepts_bounded_url_safe_request_ids() {
         assert!(validate_id("8d18b3e2-3d60-4db2_a").is_ok());
         assert!(validate_id("").is_err());
         assert!(validate_id("not/a/request").is_err());
+    }
+
+    #[test]
+    fn validates_desktop_boot_manifest_asset_urls() {
+        let digest = "a".repeat(64);
+        assert!(validate_boot_manifest(&json!({
+            "rev": "revision-1",
+            "entries": [{ "url": format!("dsh-plugin://localhost/{digest}/client.js?rev=revision-1") }]
+        }))
+        .is_ok());
+        assert!(validate_boot_manifest(&json!({
+            "rev": "revision-1",
+            "entries": [{ "url": format!("dsh-plugin://example.com/{digest}/client.js?rev=revision-1") }]
+        }))
+        .unwrap_err()
+        .contains("unauthorized"));
+        assert!(validate_boot_manifest(&json!({
+            "rev": "revision-1",
+            "entries": [{ "url": "dsh-plugin://localhost/not-a-digest/client.js?rev=revision-1" }]
+        }))
+        .unwrap_err()
+        .contains("digest"));
+    }
+
+    #[test]
+    fn maps_custom_protocol_urls_for_webview2() {
+        let digest = "a".repeat(64);
+        let manifest = json!({
+            "rev": "revision-1",
+            "entries": [{ "url": format!("dsh-plugin://localhost/{digest}/client.js?rev=revision-1") }]
+        });
+
+        let mapped = webview_boot_manifest(manifest.clone(), true).expect("valid manifest maps");
+        assert_eq!(
+            mapped["entries"][0]["url"],
+            format!("http://dsh-plugin.localhost/{digest}/client.js?rev=revision-1")
+        );
+        assert_eq!(
+            webview_boot_manifest(manifest.clone(), false)
+                .expect("valid manifest remains canonical"),
+            manifest
+        );
     }
 
     #[test]

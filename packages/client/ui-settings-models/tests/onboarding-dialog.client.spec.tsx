@@ -117,6 +117,7 @@ function harness(options: {
                 ? { source: options.credential.source }
                 : {},
               writable: options.credential?.writable ?? true,
+              input: 'value' as const,
             },
           },
         }))

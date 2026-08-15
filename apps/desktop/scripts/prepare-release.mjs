@@ -20,9 +20,29 @@ const resourcesDir = path.join(appDir, 'src-tauri', 'release-resources')
 const hostDir = path.join(resourcesDir, 'host')
 const runtimeDir = path.join(resourcesDir, 'runtime')
 const cliDir = path.join(repoRoot, 'apps', 'cli')
+const credentialManifest = path.join(appDir, 'native-credential-store', 'Cargo.toml')
 
 rmSync(resourcesDir, { recursive: true, force: true })
 mkdirSync(runtimeDir, { recursive: true })
+
+const credentialBuild = spawnSync(
+  'cargo',
+  ['build', '--release', '--manifest-path', credentialManifest],
+  { cwd: repoRoot, stdio: 'inherit' },
+)
+if (credentialBuild.error !== undefined) throw credentialBuild.error
+if (credentialBuild.status !== 0) {
+  throw new Error(`credential library build failed with status ${credentialBuild.status ?? 'unknown'}`)
+}
+const credentialLibrary = process.platform === 'win32'
+  ? 'dsh_credential_store.dll'
+  : process.platform === 'darwin'
+    ? 'libdsh_credential_store.dylib'
+    : 'libdsh_credential_store.so'
+copyFileSync(
+  path.join(appDir, 'native-credential-store', 'target', 'release', credentialLibrary),
+  path.join(runtimeDir, credentialLibrary),
+)
 
 const pnpmCli = process.env.npm_execpath
 if (pnpmCli === undefined) {

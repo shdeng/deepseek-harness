@@ -22,7 +22,9 @@
 
 两者都在各自的 `package.json` 中通过 `dsh` 字段声明自己：`dsh.profile` 列出一个 profile 的组合包，`dsh.bundle` 指向一个组合包的 patch 文件。
 
-[`dsh-base`](../packages/bundle/base/README.md) 是每个 profile 的第一层：模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测。[`dsh-web-app`](../packages/bundle/web-app/README.md) 增加浏览器应用；[`dsh-headless`](../packages/bundle/headless/README.md) 增加一次性运行器，且完全不带服务器。
+[`dsh-base`](../packages/bundle/base/README.md) 是每个 profile 的第一层：模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测。[`dsh-gui-app`](../packages/bundle/gui-app/README.md) 增加传输无关的图形 Host 与客户端组合。[`dsh-web-app`](../packages/bundle/web-app/README.md) 增加 HTTP、WebSocket 和静态资源传输；[`dsh-desktop-app`](../packages/bundle/desktop-app/README.md) 选择无监听器的 Tauri 组合。[`dsh-headless`](../packages/bundle/headless/README.md) 增加一次性运行器，且完全不带服务器。
+
+Desktop 组合包继续让 Node 负责策略与组合，并通过 `ctx.desktopNative` 挂载 Rust 实现。目录选择、受控外链、通知、应用元数据和深链接通过 Host 私有协议；系统凭据库的凭据在 WebView 与 stdio 中只以不透明引用传递。文件系统策略与 subprocess 流式执行仍留在 Node。
 
 各层按此顺序应用在空条目列表之上：先按 profile 列出的顺序应用每个组合包，然后是 profile 的 `cordis.patch.yml`，然后是 home 级的那份，最后是任意 `--patch` overlay。一条 patch 按 id 定位某个条目并替换其整个 config，或插入新条目。
 

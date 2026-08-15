@@ -59,7 +59,7 @@ function api(overrides: {
       describe: (payload: { refs: string[] }) => {
         seenRefs.push(payload.refs)
         return (overrides.describeCredentials ?? (refs => Promise.resolve(ok({
-          credentials: Object.fromEntries(refs.map(ref => [ref, { configured: ref === 'OPENAI_API_KEY', writable: true }])),
+          credentials: Object.fromEntries(refs.map(ref => [ref, { configured: ref === 'OPENAI_API_KEY', writable: true, input: 'value' as const }])),
         }))))(payload.refs)
       },
       set: () => Promise.resolve(ok({})),
@@ -84,7 +84,7 @@ describe('ModelsSettingsStore', () => {
       configured: true,
       removable: false,
       apiKeyEnv: 'DEEPSEEK_API_KEY',
-      credential: { configured: false, writable: true },
+      credential: { configured: false, writable: true, input: 'value' },
     })
     expect(byProvider.get('openai')).toMatchObject({
       configured: true,

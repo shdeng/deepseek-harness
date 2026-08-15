@@ -184,9 +184,17 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'credentials',
     title: 'Credential seam',
     mode: 'seam',
-    implementations: ['credentials-local'],
+    implementations: ['credentials-local', 'credentials-system'],
     consumers: ['llm-deepseek', 'llm-pi-ai', 'apiproxy'],
-    note: 'Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage.',
+    note: 'Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage, while Desktop captures through Rust and stores in the system vault.',
+  },
+  {
+    key: 'desktopNative',
+    pkg: 'desktop-native',
+    title: 'Host-governed desktop operations',
+    mode: 'seam',
+    consumers: ['directory-picker-desktop', 'credentials-system', 'apiproxy'],
+    note: 'The Desktop CLI bootstrap provides the Node-to-Rust bridge; directory selection, controlled links, notifications, metadata, credential capture, and deep-link events remain behind Host composition rather than WebView plugin commands.',
   },
   {
     key: 'sessionTelemetry',
@@ -501,7 +509,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'directory-picker',
     title: 'Workspace-directory picking seam',
     mode: 'seam',
-    implementations: ['directory-picker-native', 'directory-picker-browse'],
+    implementations: ['directory-picker-native', 'directory-picker-browse', 'directory-picker-desktop'],
     consumers: ['apiproxy'],
     note: 'Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement).',
   },
@@ -1147,7 +1155,7 @@ function unionSets<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): Set<T> {
 }
 
 /**
- * Select the package source files of one project in deterministic order.
+ * Select relation-bearing package and CLI source files in deterministic order.
  * @param project - the loaded repository TypeScript project.
  * @returns `packages/<group>/<pkg>/src` files tagged with their package name.
  */
@@ -1155,7 +1163,8 @@ export function collectPackageSources(project: TypeScriptProject): PackageSource
   return project.sourceFiles().flatMap((sourceFile): PackageSource[] => {
     const rel = project.relativePath(sourceFile)
     const match = /^packages\/[^/]+\/([^/]+)\/src\/.+\.ts$/.exec(rel)
-    return match?.[1] ? [{ rel, pkg: match[1], sourceFile }] : []
+    if (match?.[1]) return [{ rel, pkg: match[1], sourceFile }]
+    return /^apps\/cli\/src\/.+\.ts$/.test(rel) ? [{ rel, pkg: 'cli', sourceFile }] : []
   }).sort((left, right) => left.rel.localeCompare(right.rel))
 }
 

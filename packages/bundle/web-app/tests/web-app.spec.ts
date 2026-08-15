@@ -11,7 +11,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
+import type { ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
+import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { apply, Config, internals } from '../src/index.ts'
 
 vi.mock('node:os', async importOriginal => ({
@@ -44,8 +45,15 @@ function stageDist(): string {
 }
 
 /** A fake webServer capturing the fallback seat and index taps. */
-function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): { server: WebServer; seat: () => unknown } {
+function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): {
+  server: WebServer
+  seat: () => unknown
+  routes: WebRoute[]
+  taps: Array<(html: string) => string>
+} {
   let fallback: unknown
+  const routes: WebRoute[] = []
+  const taps: Array<(html: string) => string> = []
   const server = {
     host,
     port: 4567,
@@ -54,8 +62,16 @@ function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): { server: 
       return () => { fallback = undefined }
     },
     applyIndexTaps: (html: string) => html,
+    register: (route: WebRoute) => {
+      routes.push(route)
+      return () => { routes.splice(routes.indexOf(route), 1) }
+    },
+    tapIndex: (tap: (html: string) => string) => {
+      taps.push(tap)
+      return () => { taps.splice(taps.indexOf(tap), 1) }
+    },
   } as unknown as WebServer
-  return { server, seat: () => fallback }
+  return { server, seat: () => fallback, routes, taps }
 }
 
 /** A fake Loader whose settlement the test controls (the URL line waits on it). */
@@ -70,6 +86,44 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
+  it('owns Web client-asset serving and boot-manifest injection', async () => {
+    stageDist()
+    const ctx = new Context()
+    const { server, routes, taps } = fakeHttpServer()
+    ctx.provide('webServer', server)
+    const registry = {
+      graph: () => ({ rev: 'graph-1', entries: [{ id: 'plugin-a', url: '/plugins/plugin-a/client.js?rev=a1', rev: 'a1' }] }),
+      readAsset: async (id: string, sourceMap: boolean) => id === 'plugin-a' && !sourceMap
+        ? { body: new TextEncoder().encode('plugin bytes'), contentType: 'text/javascript; charset=utf-8' }
+        : undefined,
+    } as unknown as ClientModuleRegistry
+    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    ctx.provide('clientModules', registry)
+    await vi.waitFor(() => { expect(routes.some(candidate => candidate.path === '/plugins')).toBe(true) })
+
+    const route = routes.find(candidate => candidate.path === '/plugins')
+    expect(route).toBeDefined()
+    const state: { status?: number; headers?: Record<string, string>; body?: unknown } = {}
+    await route!.handler(
+      { method: 'GET', url: '/plugins/plugin-a/client.js?rev=a1' } as never,
+      {
+        writeHead: (status: number, headers: Record<string, string>) => {
+          state.status = status
+          state.headers = headers
+        },
+        end: (body?: unknown) => { state.body = body },
+      } as never,
+    )
+    expect(state).toMatchObject({
+      status: 200,
+      headers: { 'content-type': 'text/javascript; charset=utf-8' },
+    })
+    expect(new TextDecoder().decode(state.body as Uint8Array)).toBe('plugin bytes')
+    expect(taps).toHaveLength(1)
+    expect(taps[0]!('<head></head>')).toContain('window.__DSH_BOOT__')
+    await ctx.fiber.dispose()
+  })
+
   it('mounts dist serving, prompt section, bash variables, and prints the URL with the LAN snapshot', async () => {
     stageDist()
     const ctx = new Context()

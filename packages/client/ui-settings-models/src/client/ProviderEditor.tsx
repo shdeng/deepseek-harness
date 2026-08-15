@@ -1,11 +1,12 @@
 /**
  * One provider's editor card, hand-written per adapter family: the primary
- * field is a single write-only **API key** input (the page never asks for an
- * environment-variable name — a typed key stores through `credentials.set`
- * under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile
- * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
- * a key is entered; a blank key materializes a reference-free profile for
- * provider-native authentication);
+ * field is a single write-only **API key** action (the page never asks for an
+ * environment-variable name). Web profiles send the typed value through
+ * `credentials.set`; Desktop profiles invoke native capture so no secret
+ * enters the WebView. Both store under the profile's reference, deriving
+ * `<ROUTE>_API_KEY` when the profile has none. The pi-ai profile records that
+ * derivation as `apiKeyEnv` only when a key is configured; a blank key
+ * materializes a reference-free profile for provider-native authentication;
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
  * both families, DeepSeek's id/name/context-window model catalog, and the
  * display name and wire protocol of a pi-ai route the adapter does not ship —
@@ -146,7 +147,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { namespace, settingsPath, api, t } = props
   const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(namespace, settingsPath))
   const [keyDraft, setKeyDraft] = useState('')
-  const [keyState, setKeyState] = useState<CredentialView | undefined>(undefined)
+  const desktop = (globalThis as { __DSH_DESKTOP_IPC__?: boolean }).__DSH_DESKTOP_IPC__ === true
+  const [keyState, setKeyState] = useState<CredentialView | undefined>(() => desktop
+    ? undefined
+    : { configured: false, writable: true, input: 'value' })
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   // A settings success advances both retry baselines immediately. Keeping the
@@ -173,7 +177,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
 
   useEffect(() => {
     let stale = false
-    setKeyState(undefined)
+    if (desktop) setKeyState(undefined)
     // The key state is a placeholder hint, not a precondition for editing:
     // neither a business rejection nor a transport failure may reach the
     // browser as an unhandled rejection, so the card simply renders without
@@ -186,7 +190,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       () => undefined,
     )
     return () => { stale = true }
-  }, [api.credentials, keyRef])
+  }, [api.credentials, desktop, keyRef])
 
   const stringAt = (source: unknown, key: string): string | undefined => {
     const value = getPath(source, [key])
@@ -204,13 +208,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   // The model list is validated by the same per-row checker for both families,
   // so a bad row is named by its position rather than by a blanket message.
   const modelFailure = validateDeepSeekModels(getPath(draft, ['models']))
-  const keyFailure = apiKeyFailure(keyDraft)
+  const nativeCredential = keyState?.input === 'native'
+  const keyFailure = nativeCredential ? undefined : apiKeyFailure(keyDraft)
   // What a probe or a write must carry: the typed key with paste whitespace
   // removed. A blank field yields an empty string, which both call sites read
   // as "no key supplied" rather than as a key — that is how a card whose
   // provider already has a stored key is edited without re-entering it.
   const keyValue = keyDraft.trim()
-  const credentialRequiredFailure = props.credentialRequired === true
+  const credentialRequiredFailure = !nativeCredential && props.credentialRequired === true
     && keyDraft.length > 0 && keyValue.length === 0
     ? 'keyRequired' as const
     : undefined
@@ -228,6 +233,30 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     ...probeApi === undefined ? {} : { api: probeApi },
     ...keyValue.length === 0 ? {} : { apiKey: keyValue },
   }
+
+  const captureCredential = async (): Promise<void> => {
+    setBusy(true)
+    setFailure(undefined)
+    try {
+      const response = await api.credentials.capture({ ref: keyRef })
+      if (!response.result.ok) {
+        setFailure(response.result.error.message)
+        return
+      }
+      if (response.result.value.stored) {
+        setKeyState(current => ({
+          configured: true,
+          source: 'system',
+          writable: current?.writable ?? true,
+          input: 'native',
+        }))
+      }
+    } catch (error) {
+      setFailure(messageOf(error))
+    } finally {
+      setBusy(false)
+    }
+  }
   /**
    * The write for this card, or a failure message. Every edit travels as
    * path ops against the STORED section: the draft comes from the redacted
@@ -239,7 +268,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     // A pi-ai profile names the conventional reference only when this page is
     // about to store a key. Otherwise the provider keeps its native auth path.
     const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
-      && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
+      && stringAt(fallback, 'apiKeyEnv') === undefined
+      && (keyValue.length > 0 || (nativeCredential && keyState.configured))
       ? setPath(draft, ['apiKeyEnv'], keyRef)
       : draft
     if (props.credentialOnly !== true) {
@@ -361,19 +391,35 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       <>
         <div className={styles['field']}>
           <span className={styles['fieldLabel']}>{t('keyInput')}</span>
-          <input
-            className={styles['input']}
-            type="password"
-            autoComplete="off"
-            value={keyDraft}
-            placeholder={keyPlaceholder}
-            aria-label={t('keyInput')}
-            aria-invalid={shownKeyFailure !== undefined}
-            required={props.credentialRequired === true}
-            autoFocus={props.autoFocusCredential === true}
-            disabled={disabled || keyLocked}
-            onChange={(event) => { setKeyDraft(event.target.value) }}
-          />
+          {keyState === undefined
+            ? <p className={styles['advancedHint']}>{t('loadingCredential')}</p>
+            : nativeCredential
+              ? (
+                <button
+                  className={styles['input']}
+                  type="button"
+                  autoFocus={props.autoFocusCredential === true}
+                  disabled={disabled || keyLocked}
+                  onClick={() => { void captureCredential() }}
+                >
+                  {busy ? t('keyCapturing') : keyState.configured ? t('keyReplaceNative') : t('keyCaptureNative')}
+                </button>
+              )
+              : (
+                <input
+                  className={styles['input']}
+                  type="password"
+                  autoComplete="off"
+                  value={keyDraft}
+                  placeholder={keyPlaceholder}
+                  aria-label={t('keyInput')}
+                  aria-invalid={shownKeyFailure !== undefined}
+                  required={props.credentialRequired === true}
+                  autoFocus={props.autoFocusCredential === true}
+                  disabled={disabled || keyLocked}
+                  onChange={(event) => { setKeyDraft(event.target.value) }}
+                />
+              )}
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
         </div>
         {props.credentialOnly === true ? null : <details className={styles['customized']}>
@@ -496,7 +542,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         submitDisabled={disabled || layout === 'unknown'
           || (props.credentialOnly !== true && modelFailure !== undefined)
           || shownKeyFailure !== undefined
-          || (props.credentialRequired === true && keyValue.length === 0)}
+          || (props.credentialRequired === true && (
+            nativeCredential ? !keyState.configured : keyValue.length === 0
+          ))}
         submitLabel={props.submitLabel ?? 'apply'}
         submitBusyLabel={props.submitBusyLabel ?? 'applying'}
         {...props.cancelLabel === undefined ? {} : { cancelLabel: props.cancelLabel }}

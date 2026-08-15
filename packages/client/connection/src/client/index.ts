@@ -144,4 +144,29 @@ export function apply(ctx: Context): void {
     },
   }
   ctx.provide('connection', handle)
+  if (desktop && typeof document !== 'undefined') {
+    ctx.effect(() => {
+      const openExternal = (event: MouseEvent): void => {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        const target = event.target
+        if (!(target instanceof Element)) return
+        const anchor = target.closest('a[href]')
+        if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute('download')) return
+        const url = new URL(anchor.href, location.href)
+        if (!matchesExternalUrl(url)) return
+        event.preventDefault()
+        void api.host.openExternal({ url: url.href }).then((response) => {
+          if (!response.result.ok) console.error('[desktop] external link was rejected:', response.result.error.message)
+        }, (error: unknown) => {
+          console.error('[desktop] external link failed:', error)
+        })
+      }
+      document.addEventListener('click', openExternal, true)
+      return () => { document.removeEventListener('click', openExternal, true) }
+    }, 'connection: controlled desktop external links')
+  }
+}
+
+function matchesExternalUrl(url: URL): boolean {
+  return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== location.origin
 }

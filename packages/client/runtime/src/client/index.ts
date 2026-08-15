@@ -197,6 +197,7 @@ export function apply(ctx: Context): void {
     identity: candidate => sessions.scopeOf(candidate),
   })
   const workspaces = new WorkspaceRuntime(ctx, connection.api, sessions)
+  const desktopRunning = new Set<string>()
   ctx.effect(
     () => workspaces.startInitialSelection(),
     'runtime: initial Workspace selection',
@@ -206,14 +207,38 @@ export function apply(ctx: Context): void {
       sessions.handleMuxEnvelope(envelope)
     },
     onHostEnvelope: (envelope) => {
+      const frame = envelope.payload
+      const completedInBackground = frame.type === 'host/session-status' && !frame.running
+        && desktopRunning.delete(frame.sessionId)
+        && typeof document !== 'undefined' && document.visibilityState === 'hidden'
+      if (frame.type === 'host/session-status' && frame.running) desktopRunning.add(frame.sessionId)
       sessions.handleHostEnvelope(envelope)
       workspaces.handleHostEnvelope(envelope)
       // Forwarded-event bridge: the session layer ignores registry frames (no
       // session routing). This plugin owns the frame sink, so it hands the
       // decoded frame straight to the Remote service, which fans it out to
       // `ctx.remote.$on` subscribers; no consumer reads a frame.
-      const frame = envelope.payload
       if (frame.type === 'host/remote-event') ctx.remote.$dispatch(frame.event, frame.args)
+      if (frame.type === 'host/deep-link') {
+        try {
+          sessions.open(frame.sessionId)
+        } catch (error) {
+          console.error('[desktop] deep link names an unavailable session:', error)
+        }
+      }
+      if (completedInBackground) {
+        const description = connection.hostDescription.getSnapshot()
+        if (description?.desktop !== undefined) {
+          void connection.api.host.notify({
+            title: description.desktop.name,
+            body: `Task ${frame.sessionId} finished`,
+          }).then((response) => {
+            if (!response.result.ok) console.error('[desktop] completion notification was rejected:', response.result.error.message)
+          }, (error: unknown) => {
+            console.error('[desktop] completion notification failed:', error)
+          })
+        }
+      }
     },
     onConnected: () => {
       sessions.handleConnected()

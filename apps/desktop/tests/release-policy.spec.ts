@@ -10,6 +10,9 @@ describe('Desktop release package policy', () => {
     '@google/genai',
     '@mistralai/mistralai',
     '@openai/codex-win32-x64',
+    '@deepseek-ai/dsh-web-app',
+    '@deepseek-ai/dsh-host-webserver',
+    '@deepseek-ai/dsh-web-frontend',
     'openai',
   ])('rejects %s', (packageName) => {
     expect(isForbiddenReleasePackage(packageName)).toBe(true)

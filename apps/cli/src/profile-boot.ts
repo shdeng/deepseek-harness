@@ -41,13 +41,17 @@ import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.
 const NAME = 'dsh'
 const SHUTDOWN_ON_STDIN_EOF_ENV = 'DSH_SHUTDOWN_ON_STDIN_EOF'
 const DESKTOP_SIDECAR_ENV = 'DSH_DESKTOP_SIDECAR'
-const DESKTOP_WEB_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] as const
+const DESKTOP_BUNDLES = [
+  '@deepseek-ai/dsh-base',
+  '@deepseek-ai/dsh-gui-app',
+  '@deepseek-ai/dsh-desktop-app',
+] as const
 
 /** Resolve the profile template override owned by the packaged Desktop deployment. */
 export function resolveProfileTemplate(name: string, desktopSidecar = process.env[DESKTOP_SIDECAR_ENV]): readonly string[] | undefined {
   if (desktopSidecar === undefined) return undefined
   if (desktopSidecar !== '1') throw new Error(`${DESKTOP_SIDECAR_ENV} must be "1" when set`)
-  return name === 'web' ? DESKTOP_WEB_BUNDLES : undefined
+  return name === 'desktop' ? DESKTOP_BUNDLES : undefined
 }
 
 /**
@@ -211,6 +215,8 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+  /** Optional launcher-owned services installed before any config-tree entry mounts. */
+  prepare?: (ctx: Context) => Promise<void> | void
 }
 
 /**
@@ -288,6 +294,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
+    return options.prepare?.(hostCtx)
   })
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher

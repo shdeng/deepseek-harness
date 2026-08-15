@@ -41,7 +41,10 @@ for (let packageName = queue.shift(); packageName !== undefined; packageName = q
   releasePackages.add(packageName)
   const manifest = workspaceManifests.get(packageName)
   if (manifest === undefined) continue
-  queue.push(...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {}))
+  queue.push(...Object.keys(manifest.dependencies ?? {}))
+  queue.push(...Object.keys(manifest.peerDependencies ?? {}).filter(
+    dependency => manifest.peerDependenciesMeta?.[dependency]?.optional !== true,
+  ))
 }
 
 const forbidden = [...releasePackages].filter(isForbiddenReleasePackage)

@@ -38,7 +38,7 @@ pnpm dsh web
 
 ### Run the Desktop App from source
 
-The Desktop App is a Tauri proof of concept that starts the existing Node.js Host as a child process and displays the same Web UI in the system WebView. Install Node.js, pnpm, Rust, and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/) before running it.
+The Desktop App is a Tauri application that supervises the existing Node.js Host and displays the shared graphical client in the system WebView. Install Node.js, pnpm, Rust, and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/) before running it from source.
 
 ```sh
 git clone https://github.com/deepseek-ai/deepseek-harness.git
@@ -47,7 +47,7 @@ pnpm install
 pnpm desktop:dev
 ```
 
-The Desktop App is currently a source-only development build, not a packaged installer. The PoC uses an ephemeral loopback HTTP connection; the proposed release architecture replaces it with desktop IPC and a bundled Node runtime. See the [Desktop App guide](apps/desktop/README.md) and [desktop shell design](.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md).
+The v0.3 Desktop foundation uses Tauri IPC and a private Rust–Node protocol for product traffic, embeds the application entry, loads dynamic client bundles through an application-owned custom protocol, and opens no Host listening socket. Rust now owns native directory selection, operating-system credential storage, controlled external links, notifications, application metadata, and `deepseek-harness://session/<id>` deep links through Host capability/API Consumers; the WebView has no direct plugin access to those operations. The Windows release build bundles its own Node runtime, credential library, and Desktop-only Host closure. See the [Desktop App guide](apps/desktop/README.md) and [desktop shell design](.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md).
 
 ## Community and support
 

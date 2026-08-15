@@ -45,6 +45,9 @@ export interface CredentialInfo {
   writable: boolean
 }
 
+/** How a configuration Consumer supplies a new value to the active provider. */
+export type CredentialInputMode = 'value' | 'native'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     credentials: CredentialProvider
@@ -97,6 +100,28 @@ export abstract class CredentialProvider extends Service {
    * @param ref - the reference to remove.
    */
   abstract unset(ref: CredentialRef): Promise<void>
+
+  /**
+   * How configuration surfaces may supply new values. File-backed providers
+   * accept a value; desktop system-vault providers open native secure input.
+   * @returns the provider's input mode.
+   */
+  inputMode(): CredentialInputMode {
+    return 'value'
+  }
+
+  /**
+   * Ask the provider-owned native UI to capture and store one credential.
+   * Value-input providers reject this operation.
+   * @param ref - opaque reference whose value is being captured.
+   * @param signal - caller lifetime.
+   * @returns true when stored, or false when the operator cancels.
+   */
+  capture(ref: CredentialRef, signal: AbortSignal): Promise<boolean> {
+    void ref
+    void signal
+    return Promise.reject(new Error('credential provider does not support native capture'))
+  }
 
   /* jscpd:ignore-start -- deliberate symmetry with the settings seam's commit
      fan-out: the contained-dispatch shape is the reviewed listener-lifecycle

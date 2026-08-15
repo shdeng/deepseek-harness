@@ -18,6 +18,7 @@ export const credentialViewSchema = z.object({
   configured: z.boolean(),
   source: z.string().optional(),
   writable: z.boolean(),
+  input: z.enum(['value', 'native']),
 }) satisfies z.ZodType<Wire<CredentialView>>
 
 /** credentials.describe request payload. */
@@ -38,6 +39,16 @@ export const credentialsSetRequestSchema = z.object({
 
 /** credentials.set response value. */
 export const credentialsSetValueSchema = z.object({}) satisfies z.ZodType<Wire<ResponseValue<'credentials.set'>>>
+
+/** credentials.capture request payload: only the opaque reference crosses the wire. */
+export const credentialsCaptureRequestSchema = z.object({
+  ref: credentialRefNameSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'credentials.capture'>>>
+
+/** credentials.capture response value. */
+export const credentialsCaptureValueSchema = z.object({
+  stored: z.boolean(),
+}) satisfies z.ZodType<Wire<ResponseValue<'credentials.capture'>>>
 
 /** credentials.unset request payload. */
 export const credentialsUnsetRequestSchema = z.object({
