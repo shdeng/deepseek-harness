@@ -26,6 +26,14 @@ export interface DesktopNotification {
   body: string
 }
 
+/** Desired state of the Tauri-owned Bilibili companion window. */
+export interface DesktopMediaCompanion {
+  /** Initial Bilibili page; later in-window navigation remains operator-owned. */
+  url: string
+  /** Whether Rust shows/focuses/plays (`true`) or pauses/hides (`false`) the window. */
+  active: boolean
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
@@ -74,6 +82,13 @@ export abstract class DesktopNative extends Service {
    * @param signal - caller lifetime.
    */
   abstract notify(notification: DesktopNotification, signal: AbortSignal): Promise<void>
+
+  /**
+   * Reconcile the isolated Bilibili WebView window with one activity state.
+   * @param companion - configured Bilibili URL and the complete desired visibility/playback state.
+   * @param signal - caller lifetime; abort discards any later completion.
+   */
+  abstract setMediaCompanion(companion: DesktopMediaCompanion, signal: AbortSignal): Promise<void>
 
   /**
    * Read metadata from the running desktop package.

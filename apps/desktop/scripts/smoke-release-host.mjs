@@ -68,7 +68,7 @@ output.on('line', (line) => {
       id: frame.id,
       result: {
         name: 'DeepSeek Harness Desktop',
-        version: '0.3.0',
+        version: '0.4.0',
         identifier: 'ai.deepseek.harness.desktop',
       },
     })}\n`)

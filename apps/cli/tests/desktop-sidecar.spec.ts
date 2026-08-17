@@ -117,4 +117,29 @@ describe('desktop sidecar protocol', () => {
     channel.handle({ v: 1, kind: 'native-response', id: 'native-2', result: null })
     expect(sent.at(-1)).toEqual({ kind: 'native-cancel', id: 'native-2' })
   })
+
+  it('carries only bounded media intent to the Rust shell', async () => {
+    const channel = new DesktopNativeChannel()
+    const sent: Record<string, unknown>[] = []
+    channel.install((outbound) => {
+      sent.push(outbound)
+      return Promise.resolve()
+    })
+    const pending = channel.request({
+      op: 'media-companion',
+      url: 'https://www.bilibili.com/video/BV1x',
+      active: true,
+    }, new AbortController().signal)
+    expect(sent[0]).toEqual({
+      kind: 'native-request',
+      id: 'native-1',
+      request: {
+        op: 'media-companion',
+        url: 'https://www.bilibili.com/video/BV1x',
+        active: true,
+      },
+    })
+    channel.handle({ v: 1, kind: 'native-response', id: 'native-1', result: null })
+    await expect(pending).resolves.toBeNull()
+  })
 })

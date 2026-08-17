@@ -5,7 +5,7 @@ import { once } from 'node:events'
 import { createInterface } from 'node:readline'
 import type { Context } from '@deepseek-ai/cordis'
 import { DesktopNative } from '@deepseek-ai/dsh-host-desktop-native'
-import type { DesktopApplicationMetadata, DesktopNotification } from '@deepseek-ai/dsh-host-desktop-native'
+import type { DesktopApplicationMetadata, DesktopMediaCompanion, DesktopNotification } from '@deepseek-ai/dsh-host-desktop-native'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials/types'
 import type { ApiProxy, MuxFrame, HostFrame, RpcRequest, ServerRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -235,6 +235,7 @@ export class DesktopNativeChannel {
       | { op: 'capture-credential'; credential: CredentialRef }
       | { op: 'open-external'; url: string }
       | { op: 'notify'; title: string; body: string }
+      | { op: 'media-companion'; url: string; active: boolean }
       | { op: 'metadata' },
     signal: AbortSignal,
   ): Promise<unknown> {
@@ -322,6 +323,11 @@ class RustDesktopNative extends DesktopNative {
   override async notify(notification: DesktopNotification, signal: AbortSignal): Promise<void> {
     const result = await this.channel.request({ op: 'notify', ...notification }, signal)
     if (result !== null) throw new Error('Rust desktop notification provider returned an invalid outcome')
+  }
+
+  override async setMediaCompanion(companion: DesktopMediaCompanion, signal: AbortSignal): Promise<void> {
+    const result = await this.channel.request({ op: 'media-companion', ...companion }, signal)
+    if (result !== null) throw new Error('Rust desktop media companion returned an invalid outcome')
   }
 
   override async metadata(signal: AbortSignal): Promise<DesktopApplicationMetadata> {

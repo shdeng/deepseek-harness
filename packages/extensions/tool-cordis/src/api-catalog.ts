@@ -571,6 +571,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'notification', description: 'bounded plain-text title and body.' }, { name: 'signal', description: 'caller lifetime.' }],
       },
       {
+        signature: 'abstract setMediaCompanion(companion: DesktopMediaCompanion, signal: AbortSignal): Promise<void>',
+        description: 'Reconcile the isolated Bilibili WebView window with one activity state.',
+        parameters: [{ name: 'companion', description: 'configured Bilibili URL and the complete desired visibility/playback state.' }, { name: 'signal', description: 'caller lifetime; abort discards any later completion.' }],
+      },
+      {
         signature: 'abstract metadata(signal: AbortSignal): Promise<DesktopApplicationMetadata>',
         description: 'Read metadata from the running desktop package.',
         parameters: [{ name: 'signal', description: 'caller lifetime.' }],
@@ -2993,6 +2998,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DesktopApplicationMetadata',
     declaration: 'export interface DesktopApplicationMetadata {\n    name: string;\n    version: string;\n    identifier: string;\n}',
+  },
+  {
+    name: 'DesktopMediaCompanion',
+    declaration: 'export interface DesktopMediaCompanion {\n    url: string;\n    active: boolean;\n}',
   },
   {
     name: 'DesktopNotification',

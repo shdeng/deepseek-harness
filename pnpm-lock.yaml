@@ -1413,6 +1413,9 @@ importers:
 
   packages/bundle/desktop-app:
     dependencies:
+      '@deepseek-ai/dsh-bilibili-companion':
+        specifier: workspace:^
+        version: link:../../host/bilibili-companion
       '@deepseek-ai/dsh-client-ui-directory-picker-native':
         specifier: workspace:^
         version: link:../../client/ui-directory-picker-native
@@ -5213,6 +5216,31 @@ importers:
       '@deepseek-ai/dsh-typert-registry':
         specifier: workspace:^
         version: link:../../typert/registry
+
+  packages/host/bilibili-companion:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-host-desktop-native':
+        specifier: workspace:^
+        version: link:../desktop-native
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
 
   packages/host/desktop-native:
     devDependencies:

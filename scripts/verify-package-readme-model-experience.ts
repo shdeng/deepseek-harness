@@ -110,6 +110,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/host/webserver': { kind: 'none', reason: 'The HTTP carrier bridges browser and API handler and registers nothing model-facing.' },
   'packages/host/frontend-static': { kind: 'none', reason: 'The SPA dist server answers browser asset requests and registers nothing model-facing.' },
   'packages/host/plugin-inventory': { kind: 'none', reason: 'Host-side read-only Loader projection; registers nothing model-facing.' },
+  'packages/host/bilibili-companion': { kind: 'none', reason: 'Host-only media companion; registers nothing model-facing.' },
   'packages/bundle/base': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; each inserted row\'s package owns its model-facing behavior.' },
   'packages/bundle/llm-multi-provider': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; the inserted pi-ai adapter owns its model-facing behavior.' },
   'packages/bundle/gui-app': { kind: 'indirect', reason: 'The shared graphical patch carrier delegates model-facing behavior to its inserted Host rows and agent presets.' },

@@ -452,6 +452,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   CredentialInputMode: 'credentials.md',
   ResolvedCredential: 'credentials.md',
   DesktopApplicationMetadata: 'desktop-native.md',
+  DesktopMediaCompanion: 'desktop-native.md',
   DesktopNotification: 'desktop-native.md',
   AskUserQuestionAnswer: 'user-questions.md',
   AskUserQuestionRequest: 'user-questions.md',

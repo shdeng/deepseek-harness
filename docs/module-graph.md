@@ -204,6 +204,7 @@ flowchart TD
     pkg_tool_call_timeout_policy["tool-call-timeout-policy"]
   end
   subgraph group_host["packages/host"]
+    pkg_bilibili_companion["bilibili-companion"]
     pkg_host_apiproxy["host-apiproxy"]
     pkg_host_directory_picker["host-directory-picker"]
     pkg_host_directory_picker_auto["host-directory-picker-auto"]
@@ -523,6 +524,9 @@ flowchart TD
   pkg_message_feedback --> pkg_session_persistence
   pkg_message_feedback --> pkg_storage_domain
   pkg_message_feedback --> pkg_typert_protocol
+  pkg_bilibili_companion --> pkg_agent
+  pkg_bilibili_companion --> pkg_host_desktop_native
+  pkg_bilibili_companion --> pkg_invariants
   pkg_commands --> pkg_agent
   pkg_commands --> pkg_brand
   pkg_commands --> pkg_invariants
@@ -1499,6 +1503,7 @@ flowchart TD
 | [`spill-local`](../packages/spill/spill-local) | `spill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`spill`](../packages/spill/spill) |
 | [`time-context`](../packages/context/time-context) | `context` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`message-feedback`](../packages/feedback/message-feedback) | `feedback` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`storage-domain`](../packages/storage/storage-domain), [`typert-protocol`](../packages/typert/protocol) |
+| [`bilibili-companion`](../packages/host/bilibili-companion) | `host` | [`agent`](../packages/core/agent), [`host-desktop-native`](../packages/host/desktop-native), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`commands`](../packages/interaction/commands) | `interaction` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
 | [`user-approval`](../packages/interaction/user-approval) | `interaction` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt) |
 | [`user-questions`](../packages/interaction/user-questions) | `interaction` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |

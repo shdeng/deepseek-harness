@@ -819,7 +819,7 @@ dependencies = [
 
 [[package]]
 name = "deepseek-harness-app"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "command-group",
@@ -1014,7 +1014,7 @@ dependencies = [
 
 [[package]]
 name = "dsh-credential-store"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "keyring",
  "zeroize",

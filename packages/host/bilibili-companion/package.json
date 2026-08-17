@@ -1,0 +1,50 @@
+{
+  "name": "@deepseek-ai/dsh-bilibili-companion",
+  "description": "Opt-in Tauri-native Bilibili WebView synchronized with aggregate agent activity",
+  "version": "0.1.0-rc.5",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/host/bilibili-companion"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-host-desktop-native": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-host-desktop-native": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
+  }
+}

@@ -9,4 +9,8 @@
       name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
 
 - id: credentials
-  name: '@deepseek-ai/dsh-credentials-system'
+  disabled: true
+
+- insert:
+    - id: credentials-system
+      name: '@deepseek-ai/dsh-credentials-system'

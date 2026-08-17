@@ -20,10 +20,14 @@ use std::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use command_group::{CommandGroup, GroupChild};
 use ipc::{
-    validate_asset_digest, webview_boot_manifest, DesktopRequest, NativeRequest, ProtocolLine,
-    SidecarBridge,
+    validate_asset_digest, validate_media_url, webview_boot_manifest, DesktopRequest,
+    NativeRequest, ProtocolLine, SidecarBridge,
 };
-use tauri::{http, Manager, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    http,
+    webview::{NewWindowResponse, PageLoadEvent},
+    Manager, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 
 const DESKTOP_INITIALIZATION_SCRIPT: &str = r#"
 window.__DSH_DESKTOP_IPC__ = true;
@@ -46,6 +50,27 @@ window.__DSH_DESKTOP_IPC__ = true;
   window.addEventListener('unhandledrejection', (event) => {
     showStatus(event.reason?.message ?? event.reason ?? 'Desktop UI failed to start');
   });
+})();
+"#;
+const MEDIA_WINDOW_LABEL: &str = "bilibili-companion";
+const MEDIA_INITIALIZATION_SCRIPT: &str = r#"
+(() => {
+  window.__DSH_MEDIA_PLAYING__ = false;
+  const apply = () => {
+    const video = document.querySelector('video');
+    if (video === null) return;
+    if (window.__DSH_MEDIA_PLAYING__ === true) {
+      void video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  };
+  window.__DSH_MEDIA_SET_PLAYING__ = (playing) => {
+    window.__DSH_MEDIA_PLAYING__ = playing === true;
+    apply();
+  };
+  document.addEventListener('DOMContentLoaded', apply, { once: true });
+  new MutationObserver(apply).observe(document.documentElement, { childList: true, subtree: true });
 })();
 "#;
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -360,6 +385,161 @@ impl NavigationFence {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+struct MediaCompanionDesired {
+    configured_url: Option<Url>,
+    active: bool,
+}
+
+#[derive(Debug, Default)]
+struct MediaCompanionRuntime {
+    operation: Mutex<()>,
+    desired: Mutex<MediaCompanionDesired>,
+}
+
+fn media_navigation_allowed(url: &Url) -> bool {
+    url.as_str() == "about:blank" || validate_media_url(url.as_str()).is_ok()
+}
+
+fn media_playback_script(active: bool) -> String {
+    format!(
+        "window.__DSH_MEDIA_SET_PLAYING__?.({});",
+        if active { "true" } else { "false" }
+    )
+}
+
+fn apply_media_playback(window: &WebviewWindow, active: bool) -> Result<(), String> {
+    window
+        .eval(media_playback_script(active))
+        .map_err(|error| format!("failed to control Bilibili playback: {error}"))
+}
+
+fn build_media_window(
+    app: &tauri::AppHandle,
+    runtime: Arc<MediaCompanionRuntime>,
+    url: Url,
+) -> Result<WebviewWindow, String> {
+    let popup_app = app.clone();
+    let page_runtime = Arc::clone(&runtime);
+    WebviewWindowBuilder::new(app, MEDIA_WINDOW_LABEL, WebviewUrl::External(url))
+        .initialization_script(MEDIA_INITIALIZATION_SCRIPT)
+        .title("Bilibili Companion")
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(900.0, 640.0)
+        .visible(false)
+        .on_navigation(media_navigation_allowed)
+        .on_new_window(move |url, _features| {
+            if validate_media_url(url.as_str()).is_ok() {
+                let task_app = popup_app.clone();
+                let schedule = popup_app.clone();
+                let _ = schedule.run_on_main_thread(move || {
+                    if let Some(window) = task_app.get_webview_window(MEDIA_WINDOW_LABEL) {
+                        let _ = window.navigate(url);
+                    }
+                });
+            }
+            NewWindowResponse::Deny
+        })
+        .on_page_load(move |window, payload| {
+            if matches!(payload.event(), PageLoadEvent::Finished) {
+                let active = page_runtime
+                    .desired
+                    .lock()
+                    .expect("media companion state lock poisoned")
+                    .active;
+                let _ = apply_media_playback(&window, active);
+            }
+        })
+        .on_document_title_changed(|window, title| {
+            let title = if title.trim().is_empty() {
+                "Bilibili Companion".to_owned()
+            } else {
+                format!("{title} — Bilibili Companion")
+            };
+            let _ = window.set_title(&title);
+        })
+        .on_download(|_webview, _event| false)
+        .build()
+        .map_err(|error| format!("failed to create Bilibili companion window: {error}"))
+}
+
+fn reconcile_media_on_main(
+    app: &tauri::AppHandle,
+    runtime: &Arc<MediaCompanionRuntime>,
+    url: Url,
+    active: bool,
+) -> Result<(), String> {
+    let desired = MediaCompanionDesired {
+        configured_url: Some(url.clone()),
+        active,
+    };
+    let previous = {
+        let mut state = runtime
+            .desired
+            .lock()
+            .expect("media companion state lock poisoned");
+        std::mem::replace(&mut *state, desired)
+    };
+    let result = (|| {
+        let window = match app.get_webview_window(MEDIA_WINDOW_LABEL) {
+            Some(window) => {
+                if previous.configured_url.as_ref() != Some(&url) {
+                    window.navigate(url).map_err(|error| {
+                        format!("failed to navigate Bilibili companion: {error}")
+                    })?;
+                }
+                window
+            }
+            None => build_media_window(app, Arc::clone(runtime), url)?,
+        };
+        if active {
+            window
+                .unminimize()
+                .map_err(|error| format!("failed to restore Bilibili companion: {error}"))?;
+            window
+                .show()
+                .and_then(|()| window.set_focus())
+                .map_err(|error| format!("failed to show Bilibili companion: {error}"))?;
+            apply_media_playback(&window, true)
+        } else {
+            apply_media_playback(&window, false)?;
+            window
+                .hide()
+                .map_err(|error| format!("failed to hide Bilibili companion: {error}"))
+        }
+    })();
+    if result.is_err() {
+        *runtime
+            .desired
+            .lock()
+            .expect("media companion state lock poisoned") = previous;
+    }
+    result
+}
+
+fn reconcile_media_companion(app: &tauri::AppHandle, url: Url, active: bool) -> Result<(), String> {
+    let runtime = app.state::<Arc<MediaCompanionRuntime>>().inner().clone();
+    let _operation = runtime
+        .operation
+        .lock()
+        .expect("media companion operation lock poisoned");
+    let task_app = app.clone();
+    let task_runtime = Arc::clone(&runtime);
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let _ = sender.send(reconcile_media_on_main(
+            &task_app,
+            &task_runtime,
+            url,
+            active,
+        ));
+    })
+    .map_err(|error| format!("failed to schedule Bilibili companion update: {error}"))?;
+    receiver
+        .recv()
+        .map_err(|_| "Bilibili companion update ended without a result".to_owned())?
+}
+
 #[derive(Clone, Debug)]
 enum BootStatus {
     Starting,
@@ -440,6 +620,12 @@ impl HostState {
                                         NativeRequest::Notify { id, title, body } => {
                                             let result = notify(&native_app, &title, &body)
                                                 .map(|()| serde_json::Value::Null);
+                                            (id, result)
+                                        }
+                                        NativeRequest::MediaCompanion { id, url, active } => {
+                                            let result =
+                                                reconcile_media_companion(&native_app, url, active)
+                                                    .map(|()| serde_json::Value::Null);
                                             (id, result)
                                         }
                                         NativeRequest::Metadata { id } => {
@@ -872,6 +1058,7 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        .manage(Arc::new(MediaCompanionRuntime::default()))
         .register_asynchronous_uri_scheme_protocol("dsh-plugin", |context, request, responder| {
             let host = context
                 .app_handle()
@@ -982,6 +1169,21 @@ mod tests {
     }
 
     #[test]
+    fn media_navigation_accepts_only_bilibili_and_inert_bootstrap() {
+        assert!(media_navigation_allowed(
+            &Url::parse("about:blank").unwrap()
+        ));
+        assert!(media_navigation_allowed(
+            &Url::parse("https://www.bilibili.com/video/BV1x").unwrap()
+        ));
+        assert!(!media_navigation_allowed(
+            &Url::parse("https://example.com/video/BV1x").unwrap()
+        ));
+        assert!(media_playback_script(true).contains("(true)"));
+        assert!(media_playback_script(false).contains("(false)"));
+    }
+
+    #[test]
     fn deep_links_accept_only_the_registered_session_url() {
         assert_eq!(
             deep_link_session_id(&Url::parse("deepseek-harness://session/session-1234").unwrap()),
@@ -1022,6 +1224,11 @@ mod tests {
         assert!(csp.contains("style-src 'self' 'unsafe-inline'"));
         assert!(!csp.contains("https:"));
         assert!(!csp.contains("http:;"));
+        assert_eq!(
+            config["app"]["security"]["capabilities"][0]["windows"],
+            serde_json::json!(["main"]),
+            "the remote media WebView must not receive the main-window IPC capability"
+        );
     }
 
     #[test]

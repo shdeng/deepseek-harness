@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop-runtime",
   "description": "Dependency-only deploy root for the DeepSeek-only Desktop Host closure",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "license": "MIT",

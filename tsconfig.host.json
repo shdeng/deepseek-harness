@@ -293,6 +293,7 @@
     { "path": "./packages/host/directory-picker-desktop" },
     { "path": "./packages/host/frontend-static" },
     { "path": "./packages/host/plugin-inventory" },
+    { "path": "./packages/host/bilibili-companion" },
     { "path": "./packages/host/webserver" },
     { "path": "./packages/sdk/client" },
     { "path": "./packages/sdk/protocol" },

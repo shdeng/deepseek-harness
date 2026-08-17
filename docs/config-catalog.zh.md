@@ -389,6 +389,24 @@ export type Config = LocalConfig
 
 来源：[`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-bilibili-companion"></a>
+
+## `@deepseek-ai/dsh-bilibili-companion`
+
+需要：`agents` · `desktopNative`
+
+```ts config-catalog
+/** Bilibili page and bounded native-request configuration. */
+export interface Config {
+  /** Bilibili page opened when Rust first creates the companion window. */
+  videoUrl?: string
+  /** Maximum duration of each native window reconciliation request. */
+  nativeTimeoutMs?: number
+}
+```
+
+来源：[`packages/host/bilibili-companion/src/index.ts:20`](../packages/host/bilibili-companion/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`

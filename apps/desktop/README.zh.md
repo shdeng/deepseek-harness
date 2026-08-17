@@ -58,9 +58,10 @@ Profile、设置、凭据引用、附件和会话历史位于 `$DSH_HOME`（默�
 - Rust 在 Node Host 能够派生后代前，把它放入 Unix 进程组或 Windows Job Object。Tauri 退出时发送分帧关闭请求并等待 Host 释放 Cordis tree；如果超过配置的宽限期，则强制终止并回收完整进程树。协议管道失败时仍以 stdin EOF 兜底。
 - 带版本的 `DSH-IPC/1` 行帧承载启动 manifest、不透明客户端资产读取、shutdown、fetch 形式的请求/响应、流、取消和致命错误。Rust 校验传输字段，在 Windows 上把规范的 `dsh-plugin://localhost` 资源 URL 映射到 WebView2 的 `http://dsh-plugin.localhost` custom-protocol origin、关联待处理调用、把流事件定向到所属窗口、安全丢弃已取消请求的迟到响应，并在窗口关闭时取消其流。
 - 客户端 Connection 插件仅在壳层标记的 WebView 中选择 `DesktopApiClient`。Tauri command 承载 unary、respond 和通用 RPC，定向 Tauri event 承载 `events.mux` 与 `events.host`。Node adapter 通过 HTTP adapter 使用的同一组 Connection 进程内 Fetch handler 分发请求。
-- `ctx.desktopNative` 是 Rust 持有的 OS 操作 Service Definition。目录选择 Provider、凭据 Provider、外链与通知 API Consumer、应用元数据和深链接 Host stream 都使用其反向请求／事件通道。WebView 没有 picker、keychain、notification、opener、metadata 或 deep-link 插件的直接权限。
+- `ctx.desktopNative` 是 Rust 持有的 OS 操作 Service Definition。目录选择 Provider、凭据 Provider、外链与通知 API Consumer、应用元数据、隔离的媒体伴随窗口和深链接 Host stream 都使用其反向请求／事件通道。主 WebView 没有 picker、keychain、notification、opener、metadata 或 deep-link 插件的直接权限。
 - Desktop 凭据在 Rust 原生对话框中输入并直接写入操作系统凭据库。WebView 和分帧 stdio 只携带 `CredentialRef` 句柄；Node 通过打包的 Rust 动态库为提供方解析凭据。Desktop 传输会在 Node 管道前拒绝明文凭据写入和模型发现 key。
 - Rust 只接受不含凭据的 HTTP(S) 外链和 `deepseek-harness://session/<session-id>` 深链接。后台会话从运行变为空闲时发送原生通知；接受深链接后会聚焦主窗口，并通过 Host stream 选择目标会话。
+- Release 包含一个可选的 B 站伴随窗口，它使用没有任何 Tauri capability 的独立远程 WebView 标签。Rust 只允许不含凭据的 B 站 HTTPS 导航，拒绝下载，把允许的弹窗导航重定向回同一窗口，并且只接受 Node 发来的 `{ url, active }` 状态。
 - Tauri 应用 manifest 为应用 command 生成权限；主窗口 capability 只向打包后的本地内容授权。Release 导航仅接受 Tauri 应用源；debug 构建还接受注入 Tauri `devUrl` 的准确开发源，其他回环端口仍会被拒绝。CSP 排除远程脚本与通用网络访问，只允许应用自有协议提供客户端 bundle；由于受信任的 Cordis 客户端加载器与 schemastery 回调复活会用 `new Function` 编译 Host 提供的代码，因此明确允许 `unsafe-eval`；由于这些 bundle 会在运行时实体化各自的作用域 CSS，因此也允许内联样式。
 - 活动请求数和客户端流队列具有固定安全上限；Node stdout 写入在产生更多流帧前等待 drain。
 - Windows release 构建携带固定 Node 可执行文件和仅含 DeepSeek 的生产 `pnpm deploy` 闭包。专用构建入口会在打包前排除 pi-ai、OpenAI、Anthropic、Codex 与 Claude package。已部署 manifest 审计会拒绝被排除的 package 和缺失的必需内部 peer；壳层会优先选择这些资源，再回退到开发用的 `PATH` 和仓库路径。
@@ -71,4 +72,4 @@ Profile、设置、凭据引用、附件和会话历史位于 `$DSH_HOME`（默�
 
 ## 有意保留的限制
 
-v0.3 Windows 产物仍是未签名的开发者预览版。应用打开 GitHub Release 页面后，升级仍需手动完成；目前没有签名的应用内安装器、后台下载或自动回滚。macOS／Linux 打包与签名、通知交互动作、完整的打包 WebView 自动化，以及更广泛的原生文件系统／子进程 Provider 仍未完成。
+v0.4 Windows 产物仍是未签名的开发者预览版。应用打开 GitHub Release 页面后，升级仍需手动完成；目前没有签名的应用内安装器、后台下载或自动回滚。macOS／Linux 打包与签名、通知交互动作、完整的打包 WebView 自动化，以及更广泛的原生文件系统／子进程 Provider 仍未完成。

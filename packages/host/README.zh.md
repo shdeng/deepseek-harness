@@ -1,8 +1,8 @@
-# host/ — Web GUI 宿主侧
+# host/ — GUI 宿主侧与本地展示集成
 
 [English](README.md) | 中文
 
-dsh Web GUI 的宿主侧：所有客户端形态共享的 API 网关，以及承载它的普通 HTTP 服务器。浏览器侧位于 [`client/`](../client/README.md)；组合应用是 [`apps/cli`](../../apps/cli/README.md)，它启动 [`dsh-base` 组合包](../bundle/base/cordis.patch.yml) 来提供 [`apps/web`](../../apps/web/)。这些全是**产品**包。
+dsh Web GUI 的宿主侧，以及控制宿主本地展示的可选集成。浏览器侧位于 [`client/`](../client/README.md)；组合应用是 [`apps/cli`](../../apps/cli/README.md)，它启动 [`dsh-base` 组合包](../bundle/base/cordis.patch.yml) 来提供 [`apps/web`](../../apps/web/)。这些全是**产品**包，但本地集成不进入随产品提供的默认 bundle。
 
 | 包 | 职责 | ctx key |
 |---|---|---|
@@ -14,6 +14,7 @@ dsh Web GUI 的宿主侧：所有客户端形态共享的 API 网关，以及承
 | [`directory-picker-browse/`](directory-picker-browse/README.md) | 应用内目录浏览器后端和交互 | 注册 `ctx.directoryPicker` |
 | [`directory-picker-auto/`](directory-picker-auto/README.md) | 宿主自适应选择器组合 | 挂载一个后端 |
 | [`plugin-inventory/`](plugin-inventory/README.md) | 当前 Loader 条目的只读投影 | Remote `pluginInventory/list` |
+| [`bilibili-companion/`](bilibili-companion/README.md) | 由 agent 活动驱动的 B 站播放与窗口控制 | 消费 `ctx.agents` |
 
 `apiproxy` 保持传输无关；[`client/connection`](../client/connection/README.md) 提供浏览器／HTTP 载体。选择器实现可在共享 seam 后互相替换。
 

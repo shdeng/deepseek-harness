@@ -131,6 +131,11 @@ pub enum NativeRequest {
         title: String,
         body: String,
     },
+    MediaCompanion {
+        id: String,
+        url: Url,
+        active: bool,
+    },
     Metadata {
         id: String,
     },
@@ -357,6 +362,30 @@ impl SidecarBridge {
                             id,
                             title: title.to_owned(),
                             body: body.to_owned(),
+                        }))
+                    }
+                    Some("media-companion") => {
+                        if request.len() != 3 {
+                            return Err(
+                                "Node Host media companion request carries unsupported fields"
+                                    .to_owned(),
+                            );
+                        }
+                        let url = request.get("url").and_then(Value::as_str).ok_or_else(|| {
+                            "Node Host media companion request has no URL".to_owned()
+                        })?;
+                        let active =
+                            request
+                                .get("active")
+                                .and_then(Value::as_bool)
+                                .ok_or_else(|| {
+                                    "Node Host media companion request has no boolean active state"
+                                        .to_owned()
+                                })?;
+                        Ok(ProtocolLine::NativeRequest(NativeRequest::MediaCompanion {
+                            id,
+                            url: validate_media_url(url)?,
+                            active,
                         }))
                     }
                     Some("metadata") => {
@@ -697,6 +726,29 @@ fn validate_credential_handle(handle: &str) -> Result<(), String> {
     Ok(())
 }
 
+/** Validate the only remote top-level navigation the native media window accepts. */
+pub fn validate_media_url(value: &str) -> Result<Url, String> {
+    if value.is_empty() || value.len() > 4096 {
+        return Err("desktop media companion URL is outside its bounds".to_owned());
+    }
+    let url =
+        Url::parse(value).map_err(|_| "desktop media companion URL is not absolute".to_owned())?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "desktop media companion URL has no host".to_owned())?
+        .to_ascii_lowercase();
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || !(host == "bilibili.com" || host.ends_with(".bilibili.com") || host == "b23.tv")
+    {
+        return Err(
+            "desktop media companion allows credential-free Bilibili HTTPS URLs only".to_owned(),
+        );
+    }
+    Ok(url)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -736,6 +788,16 @@ mod tests {
             body: Some("{\"payload\":{\"settingsNs\":\"llm\",\"apiKey\":\"secret\"}}".to_owned()),
         };
         assert!(discovery.validate().unwrap_err().contains("handles only"));
+    }
+
+    #[test]
+    fn media_urls_are_bounded_to_credential_free_bilibili_https() {
+        assert!(validate_media_url("https://www.bilibili.com/video/BV1x").is_ok());
+        assert!(validate_media_url("https://space.bilibili.com/1").is_ok());
+        assert!(validate_media_url("https://b23.tv/example").is_ok());
+        assert!(validate_media_url("http://www.bilibili.com/video/BV1x").is_err());
+        assert!(validate_media_url("https://user:secret@www.bilibili.com/video/BV1x").is_err());
+        assert!(validate_media_url("https://example.com/video/BV1x").is_err());
     }
 
     #[test]

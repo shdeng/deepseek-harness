@@ -4,11 +4,11 @@ English | [中文](desktop-native.zh.md)
 
 [`@deepseek-ai/dsh-host-desktop-native`](../../packages/host/desktop-native) defines `ctx.desktopNative`, the Host-facing interface to operations owned by the supervised Tauri shell. The Desktop bundle mounts Consumers and Providers around this interface; ordinary Web and headless profiles do not mount it. Node remains responsible for profile composition, product policy, session behavior, filesystem access, and subprocess streaming.
 
-The private `DSH-IPC/1` channel is bidirectional. Node sends bounded native requests for directory selection, controlled HTTP(S) opening, notifications, application metadata, and secure credential capture. Rust sends accepted `deepseek-harness://session/<session-id>` links back as `desktopNative/deep-link`. Both sides validate operation-specific fields and correlate request ids; no operation accepts an arbitrary command name or local path to execute.
+The private `DSH-IPC/1` channel is bidirectional. Node sends bounded native requests for directory selection, controlled HTTP(S) opening, notifications, application metadata, secure credential capture, and a Bilibili media companion. Rust sends accepted `deepseek-harness://session/<session-id>` links back as `desktopNative/deep-link`. Both sides validate operation-specific fields and correlate request ids; no operation accepts an arbitrary command name, script, window label, or local path to execute.
 
 Desktop credentials use [`ctx.credentials`](credentials.md) with a system-vault Provider. Rust captures and stores secret text through Windows Credential Manager, macOS Keychain, or Linux Secret Service. WebView and stdio messages carry only a [`CredentialRef`](credentials.md); Node resolves the value through the packaged same-process Rust library when an LLM adapter needs it. The shell rejects plaintext credential RPC before forwarding it to Node.
 
-The main-window Tauri ACL contains event listening and the three application RPC commands. It grants no dialog, opener, notification, credential, metadata, or deep-link plugin command to the WebView. External anchors and task-completion notifications therefore call Host Remote methods, which reach Rust only through `ctx.desktopNative`.
+The main-window Tauri ACL contains event listening and the three application RPC commands. It grants no dialog, opener, notification, credential, metadata, or deep-link plugin command to the WebView. The separate Bilibili window label appears in no capability, so its remote content has no Harness IPC permission. External anchors, task-completion notifications, and media activity intent therefore reach Rust only through `ctx.desktopNative`.
 
 Design record: [Tauri desktop shell Agent Note](../../.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md).
 
@@ -57,6 +57,13 @@ abstract openExternal(url: string, signal: AbortSignal): Promise<void>
 abstract notify(notification: DesktopNotification, signal: AbortSignal): Promise<void>
 
 /**
+ * Reconcile the isolated Bilibili WebView window with one activity state.
+ * @param companion - configured Bilibili URL and the complete desired visibility/playback state.
+ * @param signal - caller lifetime; abort discards any later completion.
+ */
+abstract setMediaCompanion(companion: DesktopMediaCompanion, signal: AbortSignal): Promise<void>
+
+/**
  * Read metadata from the running desktop package.
  * @param signal - caller lifetime.
  * @returns metadata owned by the Rust application package.
@@ -66,7 +73,7 @@ abstract metadata(signal: AbortSignal): Promise<DesktopApplicationMetadata>
 
 Types: [CredentialRef](credentials.md)
 
-Source: [`packages/host/desktop-native/src/index.ts:44`](../../packages/host/desktop-native/src/index.ts)
+Source: [`packages/host/desktop-native/src/index.ts:52`](../../packages/host/desktop-native/src/index.ts)
 
 <a id="desktopnative-events"></a>
 
@@ -87,5 +94,5 @@ The Rust shell accepted a registered application deep link.
 'desktopNative/deep-link'(sessionId: string): void
 ```
 
-Source: [`packages/host/desktop-native/src/index.ts:36`](../../packages/host/desktop-native/src/index.ts)
+Source: [`packages/host/desktop-native/src/index.ts:44`](../../packages/host/desktop-native/src/index.ts)
 <!-- END GENERATED cordis-surface -->

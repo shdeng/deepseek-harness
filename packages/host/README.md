@@ -1,8 +1,8 @@
-# host/ — web-GUI host half
+# host/ — GUI host and local presentation integrations
 
 English | [中文](README.zh.md)
 
-The host side of the dsh web GUI: the API gateway every client shape shares, and the plain HTTP server it rides on. The browser side lives in [`client/`](../client/README.md); the composed application is [`apps/cli`](../../apps/cli/README.md) booting the [`dsh-base` bundle](../bundle/base/cordis.patch.yml) serving [`apps/web`](../../apps/web/). All **product** packages.
+The host side of the dsh web GUI plus opt-in integrations that control host-local presentation. The browser side lives in [`client/`](../client/README.md); the composed application is [`apps/cli`](../../apps/cli/README.md) booting the [`dsh-base` bundle](../bundle/base/cordis.patch.yml) serving [`apps/web`](../../apps/web/). All are **product** packages, though local integrations stay out of shipped default bundles.
 
 | Package | Role | ctx key |
 |---|---|---|
@@ -14,6 +14,7 @@ The host side of the dsh web GUI: the API gateway every client shape shares, and
 | [`directory-picker-browse/`](directory-picker-browse/README.md) | In-app directory-browser backend and interaction | registers `ctx.directoryPicker` |
 | [`directory-picker-auto/`](directory-picker-auto/README.md) | Host-adaptive picker composition | mounts a backend |
 | [`plugin-inventory/`](plugin-inventory/README.md) | Read-only projection of current Loader entries | Remote `pluginInventory/list` |
+| [`bilibili-companion/`](bilibili-companion/README.md) | Agent-activity-driven Bilibili playback and window control | consumes `ctx.agents` |
 
 `apiproxy` remains transport-independent; [`client/connection`](../client/connection/README.md) supplies the browser/HTTP carrier. Picker implementations replace one another behind the shared seam.
 
