@@ -213,6 +213,9 @@ importers:
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
+      '@deepseek-ai/dsh-game':
+        specifier: workspace:^
+        version: link:../../packages/host/game
       '@deepseek-ai/dsh-goal':
         specifier: workspace:^
         version: link:../../packages/goal/goal
@@ -1422,6 +1425,15 @@ importers:
       '@deepseek-ai/dsh-credentials-system':
         specifier: workspace:^
         version: link:../../credentials/credentials-system
+      '@deepseek-ai/dsh-game':
+        specifier: workspace:^
+        version: link:../../host/game
+      '@deepseek-ai/dsh-game-2048':
+        specifier: workspace:^
+        version: link:../../host/game-2048
+      '@deepseek-ai/dsh-game-companion':
+        specifier: workspace:^
+        version: link:../../host/game-companion
       '@deepseek-ai/dsh-host-directory-picker-desktop':
         specifier: workspace:^
         version: link:../../host/directory-picker-desktop
@@ -5368,6 +5380,67 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+
+  packages/host/game:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/host/game-2048:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-game':
+        specifier: workspace:^
+        version: link:../game
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/host/game-companion:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-game':
+        specifier: workspace:^
+        version: link:../game
+      '@deepseek-ai/dsh-game-2048':
+        specifier: workspace:^
+        version: link:../game-2048
+      '@deepseek-ai/dsh-host-desktop-native':
+        specifier: workspace:^
+        version: link:../desktop-native
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:^
+        version: link:../../settings/settings
+      '@deepseek-ai/dsh-user-approval':
+        specifier: workspace:^
+        version: link:../../interaction/user-approval
 
   packages/host/plugin-inventory:
     dependencies:

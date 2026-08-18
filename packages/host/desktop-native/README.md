@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Service Definition for operating-system work owned by the supervised Rust desktop shell. `ctx.desktopNative` exposes directory selection, native credential capture, controlled HTTP(S) link opening, system notifications, application-package metadata, an isolated media-companion window, and accepted deep-link events to Host Consumers. The Node Provider lives in the Desktop CLI bootstrap and uses the private `DSH-IPC/1` reverse-request channel; the main WebView has no Tauri command for these operations.
+Service Definition for operating-system work owned by the supervised Rust desktop shell. `ctx.desktopNative` exposes directory selection, native credential capture, controlled HTTP(S) link opening, system notifications, application-package metadata, isolated media and local-game companion windows, and accepted deep-link events to Host Consumers. The Node Provider lives in the Desktop CLI bootstrap and uses the private `DSH-IPC/1` reverse-request channel; the main WebView has no Tauri command for these operations.
 
 Every request and response is validated on both process sides. Deep links use `deepseek-harness://session/<session-id>` and arrive as `desktopNative/deep-link`; Rust rejects other schemes, authorities, queries, fragments, and non-URL-safe session ids before publishing the event. See the [desktop shell Agent Note](../../../.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md).
 
@@ -18,3 +18,4 @@ None; the service does not assemble model requests.
 
 - The service currently exposes the native operations required by the Desktop profile; filesystem and subprocess execution remain in Node behind their existing policy seams.
 - The media operation accepts only a Bilibili URL plus active/inactive intent; arbitrary remote URLs, scripts, window labels, and generic commands are outside the interface.
+- The game operation accepts only a content-addressed local entry URL and the closed hidden/playable/attention state; game assets travel through a separate bounded read operation.

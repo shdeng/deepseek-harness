@@ -640,6 +640,31 @@ Depends on: [`LocalConfig`](#deepseek-aidsh-fs-local)
 
 Source: [`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-game-companion"></a>
+
+## `@deepseek-ai/dsh-game-companion`
+
+Requires: `agents` · `desktopNative` · `games`
+
+```ts config-catalog
+/** Selected game and bounded native-request configuration. */
+export interface Config {
+  /** Exclusive companion selected for this Desktop Host. */
+  mode?: CompanionMode
+  /** Stable id of the game Provider to present. */
+  gameId?: string
+  /** Bilibili page opened by the media companion. */
+  videoUrl?: string
+  /** Maximum duration of each native window reconciliation request. */
+  nativeTimeoutMs?: number
+}
+
+/** Exclusive Desktop companion selection. */
+export type CompanionMode = 'off' | 'bilibili' | 'game'
+```
+
+Source: [`packages/host/game-companion/src/index.ts:27`](../packages/host/game-companion/src/index.ts)
+
 <a id="deepseek-aidsh-goal"></a>
 
 ## `@deepseek-ai/dsh-goal`
@@ -3084,6 +3109,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-credentials-system` — requires `desktopNative` ([`packages/credentials/credentials-system/src/index.ts`](../packages/credentials/credentials-system/src/index.ts))
 - `@deepseek-ai/dsh-fs-e2b` — requires `e2b` ([`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
+- `@deepseek-ai/dsh-game` ([`packages/host/game/src/index.ts`](../packages/host/game/src/index.ts))
+- `@deepseek-ai/dsh-game-2048` — requires `games` ([`packages/host/game-2048/src/index.ts`](../packages/host/game-2048/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-desktop` — requires `desktopNative` ([`packages/host/directory-picker-desktop/src/index.ts`](../packages/host/directory-picker-desktop/src/index.ts))

@@ -55,6 +55,11 @@ flowchart LR
   pkg_desktop_native["desktop-native"]
   svc_desktopNative["ctx.desktopNative<br/>Host-governed desktop operations"]
   pkg_directory_picker_desktop["directory-picker-desktop"]
+  pkg_bilibili_companion["bilibili-companion"]
+  pkg_game_companion["game-companion"]
+  pkg_game["game"]
+  svc_games["ctx.games<br/>Local companion-game registry"]
+  pkg_game_2048["game-2048"]
   pkg_session_telemetry["session-telemetry"]
   svc_sessionTelemetry["ctx.sessionTelemetry<br/>Session telemetry seam"]
   pkg_session_telemetry_otel["session-telemetry-otel"]
@@ -230,6 +235,8 @@ flowchart LR
   pkg_fs_e2b --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
+  pkg_game --> svc_games
+  pkg_game_2048 --> svc_games
   pkg_goal --> svc_goals
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
@@ -320,13 +327,16 @@ flowchart LR
   svc_credentials --> pkg_llm_deepseek
   svc_credentials --> pkg_llm_pi_ai
   svc_desktopNative --> pkg_apiproxy
+  svc_desktopNative --> pkg_bilibili_companion
   svc_desktopNative --> pkg_credentials_system
   svc_desktopNative --> pkg_directory_picker_desktop
+  svc_desktopNative --> pkg_game_companion
   svc_directoryPicker --> pkg_apiproxy
   svc_dynamicCordisRunner --> pkg_tool_cordis
   svc_e2b --> pkg_fs_e2b
   svc_e2b --> pkg_subprocess_e2b
   svc_fs --> pkg_tool_fs
+  svc_games --> pkg_game_companion
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
   svc_invariants --> pkg_scope
@@ -432,7 +442,8 @@ flowchart LR
 | `ctx.sessionPersistence` | `seam` | [`session-persistence`](../packages/session/session-persistence) | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-persistence-sqlite`](../packages/session/session-persistence-sqlite) | [`agent-loop`](../packages/core/agent-loop), [`tool-bash`](../packages/shell/tool-bash), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`message-feedback`](../packages/feedback/message-feedback) | - | Backends persist the same SessionEvent vocabulary; apps choose a backend at composition time. |
 | `ctx.settings` | `seam` | [`settings`](../packages/settings/settings) | [`settings-file`](../packages/settings/settings-file) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the web gateway serves redacted layered descriptors and writes the user layer. |
 | `ctx.credentials` | `seam` | [`credentials`](../packages/credentials/credentials) | [`credentials-local`](../packages/credentials/credentials-local), [`credentials-system`](../packages/credentials/credentials-system) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage, while Desktop captures through Rust and stores in the system vault. |
-| `ctx.desktopNative` | `seam` | `desktop-native` | - | `directory-picker-desktop`, [`credentials-system`](../packages/credentials/credentials-system), `apiproxy` | - | The Desktop CLI bootstrap provides the Node-to-Rust bridge; directory selection, controlled links, notifications, metadata, credential capture, and deep-link events remain behind Host composition rather than WebView plugin commands. |
+| `ctx.desktopNative` | `seam` | `desktop-native` | - | `directory-picker-desktop`, [`credentials-system`](../packages/credentials/credentials-system), `apiproxy`, [`bilibili-companion`](../packages/host/bilibili-companion), [`game-companion`](../packages/host/game-companion) | - | The Desktop CLI bootstrap provides the Node-to-Rust bridge; directory selection, controlled links, notifications, metadata, credential capture, isolated companion windows, and deep-link events remain behind Host composition rather than WebView plugin commands. |
+| `ctx.games` | `seam` | [`game`](../packages/host/game) | [`game-2048`](../packages/host/game-2048) | [`game-companion`](../packages/host/game-companion) | - | Providers register bounded text assets under stable ids; the registry mints content-addressed entry URLs and serves assets only through the private Desktop carrier. |
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | The seam captures, redacts, and hands session records to one backend; nothing else consumes the service — its output leaves the process. |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | Backends register side by side under names; data forms (domain first) mount on the hub and translate typed operations into opaque KV-unit primitives. |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |

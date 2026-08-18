@@ -4,11 +4,11 @@
 
 [`@deepseek-ai/dsh-host-desktop-native`](../../packages/host/desktop-native) 定义了 `ctx.desktopNative`，即 Host 访问受监督 Tauri 壳层所持操作的接口。Desktop 组合包围绕该接口挂载 Consumer 与 Provider；普通 Web 和 headless profile 不挂载它。Node 继续负责 profile 组合、产品策略、会话行为、文件系统访问和 subprocess 流式执行。
 
-私有 `DSH-IPC/1` 通道是双向的。Node 为目录选择、受控 HTTP(S) 打开、通知、应用元数据、安全凭据采集和 B 站媒体伴随窗口发送有界原生请求。Rust 把已接受的 `deepseek-harness://session/<session-id>` 链接作为 `desktopNative/deep-link` 发回。双方均校验各操作的字段并关联请求 id；任何操作都不接受任意 command 名称、脚本、窗口标签或待执行的本地路径。
+私有 `DSH-IPC/1` 通道是双向的。Node 为目录选择、受控 HTTP(S) 打开、通知、应用元数据、安全凭据采集、B 站媒体伴随窗口和内容摘要寻址的本地游戏伴随窗口发送有界原生请求。Rust 把已接受的 `deepseek-harness://session/<session-id>` 链接作为 `desktopNative/deep-link` 发回。双方均校验各操作的字段并关联请求 id；任何操作都不接受任意 command 名称、脚本、窗口标签或待执行的本地路径。
 
 Desktop 凭据通过 [`ctx.credentials`](credentials.md) 使用系统凭据库 Provider。Rust 通过 Windows Credential Manager、macOS Keychain 或 Linux Secret Service 采集并存储 secret 文本。WebView 与 stdio 消息只携带 [`CredentialRef`](credentials.md)；LLM adapter 需要凭据时，Node 通过打包的同进程 Rust 库解析其值。壳层会在明文凭据 RPC 转发给 Node 之前拒绝它。
 
-主窗口 Tauri ACL 只包含事件监听和三个应用 RPC command，不向 WebView 授予 dialog、opener、notification、credential、metadata 或 deep-link 插件 command。独立的 B 站窗口标签不属于任何 capability，因此其中的远程内容没有 Harness IPC 权限。外链 anchor、任务完成通知和媒体活动意图都只能通过 `ctx.desktopNative` 到达 Rust。
+主窗口 Tauri ACL 只包含事件监听和三个应用 RPC command，不向 WebView 授予 dialog、opener、notification、credential、metadata 或 deep-link 插件 command。独立的 B 站与游戏窗口标签不属于任何 capability，因此其中的内容没有 Harness IPC 权限。外链 anchor、任务完成通知和伴随窗口活动意图都只能通过 `ctx.desktopNative` 到达 Rust。
 
 设计记录：[Tauri 桌面壳 Agent Note](../../.agents/notes/proposed/architecture/2026-08-14-tauri-desktop-shell.md)。
 
@@ -64,6 +64,13 @@ abstract notify(notification: DesktopNotification, signal: AbortSignal): Promise
 abstract setMediaCompanion(companion: DesktopMediaCompanion, signal: AbortSignal): Promise<void>
 
 /**
+ * Reconcile the isolated local-game WebView with one complete presentation intent.
+ * @param companion - content-addressed game entry and complete desired UI state.
+ * @param signal - caller lifetime; abort discards any later completion.
+ */
+abstract setGameCompanion(companion: DesktopGameCompanion, signal: AbortSignal): Promise<void>
+
+/**
  * Read metadata from the running desktop package.
  * @param signal - caller lifetime.
  * @returns metadata owned by the Rust application package.
@@ -73,7 +80,7 @@ abstract metadata(signal: AbortSignal): Promise<DesktopApplicationMetadata>
 
 Types: [CredentialRef](credentials.md)
 
-Source: [`packages/host/desktop-native/src/index.ts:52`](../../packages/host/desktop-native/src/index.ts)
+Source: [`packages/host/desktop-native/src/index.ts:66`](../../packages/host/desktop-native/src/index.ts)
 
 <a id="desktopnative-events"></a>
 
@@ -94,5 +101,5 @@ The Rust shell accepted a registered application deep link.
 'desktopNative/deep-link'(sessionId: string): void
 ```
 
-Source: [`packages/host/desktop-native/src/index.ts:44`](../../packages/host/desktop-native/src/index.ts)
+Source: [`packages/host/desktop-native/src/index.ts:58`](../../packages/host/desktop-native/src/index.ts)
 <!-- END GENERATED cordis-surface -->

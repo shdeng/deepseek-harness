@@ -57,6 +57,11 @@ flowchart LR
   pkg_desktop_native["desktop-native"]
   svc_desktopNative["ctx.desktopNative<br/>Host-governed desktop operations"]
   pkg_directory_picker_desktop["directory-picker-desktop"]
+  pkg_bilibili_companion["bilibili-companion"]
+  pkg_game_companion["game-companion"]
+  pkg_game["game"]
+  svc_games["ctx.games<br/>Local companion-game registry"]
+  pkg_game_2048["game-2048"]
   pkg_session_telemetry["session-telemetry"]
   svc_sessionTelemetry["ctx.sessionTelemetry<br/>Session telemetry seam"]
   pkg_session_telemetry_otel["session-telemetry-otel"]
@@ -232,6 +237,8 @@ flowchart LR
   pkg_fs_e2b --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
+  pkg_game --> svc_games
+  pkg_game_2048 --> svc_games
   pkg_goal --> svc_goals
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
@@ -322,13 +329,16 @@ flowchart LR
   svc_credentials --> pkg_llm_deepseek
   svc_credentials --> pkg_llm_pi_ai
   svc_desktopNative --> pkg_apiproxy
+  svc_desktopNative --> pkg_bilibili_companion
   svc_desktopNative --> pkg_credentials_system
   svc_desktopNative --> pkg_directory_picker_desktop
+  svc_desktopNative --> pkg_game_companion
   svc_directoryPicker --> pkg_apiproxy
   svc_dynamicCordisRunner --> pkg_tool_cordis
   svc_e2b --> pkg_fs_e2b
   svc_e2b --> pkg_subprocess_e2b
   svc_fs --> pkg_tool_fs
+  svc_games --> pkg_game_companion
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
   svc_invariants --> pkg_scope
@@ -434,7 +444,8 @@ flowchart LR
 | `ctx.sessionPersistence` | `seam` | [`session-persistence`](../packages/session/session-persistence) | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-persistence-sqlite`](../packages/session/session-persistence-sqlite) | [`agent-loop`](../packages/core/agent-loop), [`tool-bash`](../packages/shell/tool-bash), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`message-feedback`](../packages/feedback/message-feedback) | - | 各后端持久化同一套 SessionEvent 词汇；应用在组合时选择后端。 |
 | `ctx.settings` | `seam` | [`settings`](../packages/settings/settings) | [`settings-file`](../packages/settings/settings-file) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | 插件注册命名空间 schema 并解析分层值；提供方存储原始文档。LLM（大语言模型）适配器在用户分区下将其入口配置注册为组合基础；Web 网关提供经过脱敏的分层描述符，并写入用户层。 |
 | `ctx.credentials` | `seam` | [`credentials`](../packages/credentials/credentials) | [`credentials-local`](../packages/credentials/credentials-local), [`credentials-system`](../packages/credentials/credentials-system) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | 配置携带对 secret 的引用；提供方拥有实际值。消费方按操作解析，因此轮换后的凭据会在紧接着的下一次请求中生效；Web 网关提供不含实际值的视图和只写存储，Desktop 则通过 Rust 采集并存入系统凭据库。 |
-| `ctx.desktopNative` | `seam` | `desktop-native` | - | `directory-picker-desktop`, [`credentials-system`](../packages/credentials/credentials-system), `apiproxy` | - | Desktop CLI 启动过程提供 Node 到 Rust 的桥接；目录选择、受控外链、通知、元数据、凭据采集和深链接事件仍位于 Host 组合之后，而不是作为 WebView 插件 command。 |
+| `ctx.desktopNative` | `seam` | `desktop-native` | - | `directory-picker-desktop`, [`credentials-system`](../packages/credentials/credentials-system), `apiproxy`, [`bilibili-companion`](../packages/host/bilibili-companion), [`game-companion`](../packages/host/game-companion) | - | Desktop CLI 启动过程提供 Node 到 Rust 的桥接；目录选择、受控外链、通知、元数据、凭据采集、隔离伴随窗口和深链接事件仍位于 Host 组合之后，而不是作为 WebView 插件 command。 |
+| `ctx.games` | `seam` | [`game`](../packages/host/game) | [`game-2048`](../packages/host/game-2048) | [`game-companion`](../packages/host/game-companion) | - | Provider 以稳定 id 注册有界文本资产；注册表生成内容摘要寻址的入口 URL，并且只通过私有 Desktop carrier 提供资产。 |
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | 该 seam 捕获会话记录、进行脱敏并交给一个后端；没有其他组件消费该服务，其输出会离开当前进程。 |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | 各后端以不同名称并列注册；数据形态（领域优先）挂载到枢纽上，并将类型化操作转换为不透明的 KV 单元原语。 |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | 等待所有已配置后端就绪，然后将领域形态发布为一个受生命周期约束的服务，用于类型化持久状态。 |

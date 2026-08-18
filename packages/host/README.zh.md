@@ -15,6 +15,9 @@ dsh Web GUI 的宿主侧，以及控制宿主本地展示的可选集成。浏�
 | [`directory-picker-auto/`](directory-picker-auto/README.md) | 宿主自适应选择器组合 | 挂载一个后端 |
 | [`plugin-inventory/`](plugin-inventory/README.md) | 当前 Loader 条目的只读投影 | Remote `pluginInventory/list` |
 | [`bilibili-companion/`](bilibili-companion/README.md) | 由 agent 活动驱动的 B 站播放与窗口控制 | 消费 `ctx.agents` |
+| [`game/`](game/README.md) | 内容摘要寻址的伴随游戏 Provider 注册表 | `ctx.games` |
+| [`game-2048/`](game-2048/README.md) | 本地无障碍 2048 游戏 Provider | 注册 `ctx.games` |
+| [`game-companion/`](game-companion/README.md) | 互斥 Bilibili／游戏 companion 选择 | 消费 `ctx.agents` 与 `ctx.games` |
 
 `apiproxy` 保持传输无关；[`client/connection`](../client/connection/README.md) 提供浏览器／HTTP 载体。选择器实现可在共享 seam 后互相替换。
 

@@ -14,6 +14,9 @@ import type { AgentLoopCardProps } from '../src/client/AgentLoopCard.tsx'
 import { BashCard } from '../src/client/BashCard.tsx'
 import type { BashCardProps } from '../src/client/BashCard.tsx'
 import { ConfigurablePluginsTab } from '../src/client/ConfigurablePluginsTab.tsx'
+import { CompanionCard } from '../src/client/CompanionCard.tsx'
+import type { CompanionCardProps } from '../src/client/CompanionCard.tsx'
+import type { CompanionCardState } from '../src/client/companion-card-controller.ts'
 import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
@@ -78,6 +81,13 @@ function renderBash(state: Partial<BashCardState> = {}) {
   const actions = cardActions()
   const props = { ...actions, t, useBashCard: bindSnapshotSelector(store) } as unknown as BashCardProps
   render(<BashCard {...props} />)
+  return actions
+}
+
+function renderCompanion() {
+  const store = createSnapshotStore<CompanionCardState>({ ...settled, mode: field('off') })
+  const actions = cardActions()
+  render(<CompanionCard {...{ ...actions, t, useCompanionCard: bindSnapshotSelector(store) } as unknown as CompanionCardProps} />)
   return actions
 }
 
@@ -285,6 +295,15 @@ describe('BashCard', () => {
     fireEvent.click(screen.getByText(en.bashTitle))
 
     expect(screen.queryByLabelText(en.bashTimeoutMs)).toBeNull()
+  })
+})
+
+describe('CompanionCard', () => {
+  it('stages one exclusive selection', () => {
+    const actions = renderCompanion()
+    fireEvent.click(screen.getByText(en.companionTitle))
+    fireEvent.change(screen.getByLabelText(en.companionMode), { target: { value: 'game' } })
+    expect(actions.edit).toHaveBeenCalledWith('mode', 'game')
   })
 })
 

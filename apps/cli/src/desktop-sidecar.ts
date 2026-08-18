@@ -5,7 +5,11 @@ import { once } from 'node:events'
 import { createInterface } from 'node:readline'
 import type { Context } from '@deepseek-ai/cordis'
 import { DesktopNative } from '@deepseek-ai/dsh-host-desktop-native'
-import type { DesktopApplicationMetadata, DesktopMediaCompanion, DesktopNotification } from '@deepseek-ai/dsh-host-desktop-native'
+import type {
+  DesktopApplicationMetadata, DesktopGameCompanion, DesktopMediaCompanion, DesktopNotification,
+} from '@deepseek-ai/dsh-host-desktop-native'
+import type { GameAssetId } from '@deepseek-ai/dsh-game'
+import type {} from '@deepseek-ai/dsh-game'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials/types'
 import type { ApiProxy, MuxFrame, HostFrame, RpcRequest, ServerRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -43,7 +47,14 @@ interface AssetReadRequest {
   asset: string
 }
 
-type DesktopRequest = FetchRequest | StreamOpenRequest | AssetReadRequest
+interface GameAssetReadRequest {
+  op: 'game-asset-read'
+  id: string
+  asset: string
+  path: string
+}
+
+type DesktopRequest = FetchRequest | StreamOpenRequest | AssetReadRequest | GameAssetReadRequest
 
 interface RequestFrame {
   v: 1
@@ -193,6 +204,20 @@ export function parseDesktopFrame(line: string): InboundFrame {
       request: { op: 'asset-read', id: request.id, asset: request.asset },
     }
   }
+  if (request.op === 'game-asset-read') {
+    if (typeof request.asset !== 'string' || !/^[a-f0-9]{64}$/.test(request.asset)) {
+      throw new Error('desktop sidecar game asset id must be a 64-character lowercase hex digest')
+    }
+    if (typeof request.path !== 'string' || !/^[a-z0-9][a-z0-9._/-]*$/.test(request.path)
+      || request.path.includes('..') || request.path.includes('//')) {
+      throw new Error('desktop sidecar game asset path must be normalized lowercase relative text')
+    }
+    return {
+      v: 1,
+      kind: 'request',
+      request: { op: 'game-asset-read', id: request.id, asset: request.asset, path: request.path },
+    }
+  }
   throw new Error(`desktop sidecar received unsupported request operation ${JSON.stringify(request.op)}`)
 }
 
@@ -236,6 +261,7 @@ export class DesktopNativeChannel {
       | { op: 'open-external'; url: string }
       | { op: 'notify'; title: string; body: string }
       | { op: 'media-companion'; url: string; active: boolean }
+      | ({ op: 'game-companion' } & DesktopGameCompanion)
       | { op: 'metadata' },
     signal: AbortSignal,
   ): Promise<unknown> {
@@ -328,6 +354,11 @@ class RustDesktopNative extends DesktopNative {
   override async setMediaCompanion(companion: DesktopMediaCompanion, signal: AbortSignal): Promise<void> {
     const result = await this.channel.request({ op: 'media-companion', ...companion }, signal)
     if (result !== null) throw new Error('Rust desktop media companion returned an invalid outcome')
+  }
+
+  override async setGameCompanion(companion: DesktopGameCompanion, signal: AbortSignal): Promise<void> {
+    const result = await this.channel.request({ op: 'game-companion', ...companion }, signal)
+    if (result !== null) throw new Error('Rust desktop game companion returned an invalid outcome')
   }
 
   override async metadata(signal: AbortSignal): Promise<DesktopApplicationMetadata> {
@@ -480,6 +511,29 @@ export async function runDesktopSidecar(
           const asset = entryId === undefined ? undefined : await modules.readAsset(entryId)
           if (asset === undefined) {
             await send({ kind: 'response', id: request.id, error: 'desktop client asset was not found' })
+          } else {
+            await send({
+              kind: 'response',
+              id: request.id,
+              result: {
+                contentType: asset.contentType,
+                body: Buffer.from(asset.body).toString('base64'),
+              },
+            })
+          }
+        } catch (error) {
+          await send({ kind: 'response', id: request.id, error: error instanceof Error ? error.message : String(error) })
+        } finally {
+          active.delete(request.id)
+        }
+        return
+      }
+      if (request.op === 'game-asset-read') {
+        try {
+          const games = runtime.ctx.get('games')
+          const asset = games?.readAsset(request.asset as GameAssetId, request.path)
+          if (asset === undefined) {
+            await send({ kind: 'response', id: request.id, error: 'desktop game asset was not found' })
           } else {
             await send({
               kind: 'response',

@@ -50,6 +50,7 @@
 | [workspace.md](workspace.md) | 工作区注册表：`Workspace`/`WorkspaceId`、注册与解析、与会话 `cwd` 的关系 |
 | [client-modules.md](client-modules.md) | Web 插件表：`dsh.client` 声明、`WebBootGraph` 线上组合、bundle 路由与 index 转换 |
 | [desktop-native.md](desktop-native.md) | 由 Host 管理的 Rust 桌面操作、反向私有协议、系统凭据库与深链接事件 |
+| [game.md](game.md) | 本地伴随游戏 id、Provider 资产注册、内容摘要寻址读取和注册表变更事件 |
 | [session-projection.md](session-projection.md) | 投影 seam：`SessionProjectionMap`、纯函数 `ProjectionDefinition` 单元、`ProjectionSnapshot` 的一致切面、变更馈送 |
 | [session-telemetry.md](session-telemetry.md) | 对外会话上报能力 seam：`SessionTelemetryRecord`/`SessionTelemetrySeverity`、`SessionTelemetrySink` 约定和 `session-telemetry/record` 脱敏 waterfall |
 

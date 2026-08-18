@@ -22,6 +22,11 @@ pub enum DesktopRequest {
         id: String,
         asset: String,
     },
+    GameAssetRead {
+        id: String,
+        asset: String,
+        path: String,
+    },
     Fetch {
         id: String,
         path: String,
@@ -46,7 +51,10 @@ pub enum StreamName {
 impl DesktopRequest {
     pub fn id(&self) -> &str {
         match self {
-            Self::AssetRead { id, .. } | Self::Fetch { id, .. } | Self::StreamOpen { id, .. } => id,
+            Self::AssetRead { id, .. }
+            | Self::GameAssetRead { id, .. }
+            | Self::Fetch { id, .. }
+            | Self::StreamOpen { id, .. } => id,
         }
     }
 
@@ -55,6 +63,10 @@ impl DesktopRequest {
         match self {
             Self::AssetRead { asset, .. } => {
                 validate_asset_digest(asset)?;
+            }
+            Self::GameAssetRead { asset, path, .. } => {
+                validate_asset_digest(asset)?;
+                validate_game_asset_path(path)?;
             }
             Self::Fetch {
                 path, method, body, ..
@@ -136,9 +148,30 @@ pub enum NativeRequest {
         url: Url,
         active: bool,
     },
+    GameCompanion {
+        id: String,
+        url: Url,
+        title: String,
+        mode: GameCompanionMode,
+        active_agent_count: u32,
+        reason: Option<GameAttentionReason>,
+    },
     Metadata {
         id: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GameCompanionMode {
+    Hidden,
+    Playable,
+    Attention,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GameAttentionReason {
+    WorkComplete,
+    Approval,
 }
 
 #[derive(Debug)]
@@ -386,6 +419,67 @@ impl SidecarBridge {
                             id,
                             url: validate_media_url(url)?,
                             active,
+                        }))
+                    }
+                    Some("game-companion") => {
+                        if !matches!(request.len(), 5 | 6) {
+                            return Err(
+                                "Node Host game companion request carries unsupported fields"
+                                    .to_owned(),
+                            );
+                        }
+                        let url = request.get("url").and_then(Value::as_str).ok_or_else(|| {
+                            "Node Host game companion request has no URL".to_owned()
+                        })?;
+                        let title =
+                            request
+                                .get("title")
+                                .and_then(Value::as_str)
+                                .ok_or_else(|| {
+                                    "Node Host game companion request has no title".to_owned()
+                                })?;
+                        if title.is_empty() || title.len() > 80 || title.trim() != title {
+                            return Err(
+                                "Node Host game companion title is outside its bounds".to_owned()
+                            );
+                        }
+                        let mode = match request.get("mode").and_then(Value::as_str) {
+                            Some("hidden") => GameCompanionMode::Hidden,
+                            Some("playable") => GameCompanionMode::Playable,
+                            Some("attention") => GameCompanionMode::Attention,
+                            _ => {
+                                return Err("Node Host game companion request has an invalid mode"
+                                    .to_owned())
+                            }
+                        };
+                        let active_agent_count = request
+                            .get("activeAgentCount")
+                            .and_then(Value::as_u64)
+                            .and_then(|value| u32::try_from(value).ok())
+                            .filter(|value| *value <= 1024)
+                            .ok_or_else(|| {
+                                "Node Host game companion request has an invalid active Agent count"
+                                    .to_owned()
+                            })?;
+                        let reason = match request.get("reason").and_then(Value::as_str) {
+                            Some("work-complete") => Some(GameAttentionReason::WorkComplete),
+                            Some("approval") => Some(GameAttentionReason::Approval),
+                            Some(_) => return Err(
+                                "Node Host game companion request has an invalid attention reason"
+                                    .to_owned(),
+                            ),
+                            None => None,
+                        };
+                        if (mode == GameCompanionMode::Attention) != reason.is_some() {
+                            return Err("Node Host game companion attention mode and reason must appear together".to_owned());
+                        }
+                        Ok(ProtocolLine::NativeRequest(NativeRequest::GameCompanion {
+                            id,
+                            url: validate_game_url(url)?,
+                            title: title.to_owned(),
+                            mode,
+                            active_agent_count,
+                            reason,
                         }))
                     }
                     Some("metadata") => {
@@ -692,6 +786,45 @@ pub(crate) fn validate_asset_digest(asset: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn validate_game_asset_path(path: &str) -> Result<(), String> {
+    if path.is_empty()
+        || path.contains("..")
+        || path.contains("//")
+        || !path.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-/".contains(&byte)
+        })
+        || !path.as_bytes()[0].is_ascii_alphanumeric()
+    {
+        return Err(
+            "desktop IPC game asset path must be normalized lowercase relative text".to_owned(),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_game_url(value: &str) -> Result<Url, String> {
+    let url = Url::parse(value).map_err(|_| "game companion URL is not absolute".to_owned())?;
+    if url.scheme() != "dsh-game"
+        || url.host_str() != Some("localhost")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("game companion URL must use the local dsh-game authority".to_owned());
+    }
+    let mut segments = url
+        .path_segments()
+        .ok_or_else(|| "game companion URL has no asset path".to_owned())?;
+    let digest = segments.next().unwrap_or_default();
+    let entry = segments.next().unwrap_or_default();
+    if segments.next().is_some() || entry != "index.html" {
+        return Err("game companion URL must select one content-addressed index.html".to_owned());
+    }
+    validate_asset_digest(digest)?;
+    Ok(url)
+}
+
 fn frame_id(frame: &Value) -> Result<&str, String> {
     let id = frame
         .get("id")
@@ -798,6 +931,18 @@ mod tests {
         assert!(validate_media_url("http://www.bilibili.com/video/BV1x").is_err());
         assert!(validate_media_url("https://user:secret@www.bilibili.com/video/BV1x").is_err());
         assert!(validate_media_url("https://example.com/video/BV1x").is_err());
+    }
+
+    #[test]
+    fn game_urls_and_asset_paths_are_content_addressed_local_text() {
+        let digest = "a".repeat(64);
+        assert!(validate_game_url(&format!("dsh-game://localhost/{digest}/index.html")).is_ok());
+        assert!(validate_game_url(&format!("https://localhost/{digest}/index.html")).is_err());
+        assert!(validate_game_url(&format!("dsh-game://localhost/{digest}/other.html")).is_err());
+        assert!(validate_game_asset_path("game.js").is_ok());
+        assert!(validate_game_asset_path("nested/game.css").is_ok());
+        assert!(validate_game_asset_path("../secret").is_err());
+        assert!(validate_game_asset_path("Game.js").is_err());
     }
 
     #[test]

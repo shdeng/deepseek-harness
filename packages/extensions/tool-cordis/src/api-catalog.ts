@@ -576,6 +576,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'companion', description: 'configured Bilibili URL and the complete desired visibility/playback state.' }, { name: 'signal', description: 'caller lifetime; abort discards any later completion.' }],
       },
       {
+        signature: 'abstract setGameCompanion(companion: DesktopGameCompanion, signal: AbortSignal): Promise<void>',
+        description: 'Reconcile the isolated local-game WebView with one complete presentation intent.',
+        parameters: [{ name: 'companion', description: 'content-addressed game entry and complete desired UI state.' }, { name: 'signal', description: 'caller lifetime; abort discards any later completion.' }],
+      },
+      {
         signature: 'abstract metadata(signal: AbortSignal): Promise<DesktopApplicationMetadata>',
         description: 'Read metadata from the running desktop package.',
         parameters: [{ name: 'signal', description: 'caller lifetime.' }],
@@ -696,6 +701,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Atomically edit literal text. When supplied, the version guard is checked before matching so stale content reports `FS_STALE_VERSION`; omission edits the current content without a freshness precondition.',
         parameters: [{ name: 'target', description: 'the resolved target to edit.' }, { name: 'edit', description: 'the literal search/replace request.' }, { name: 'expected', description: 'the version guard; omit for an unconditional edit.' }, { name: 'signal', description: 'aborts before atomic publication takes effect.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this edit runs under; a sandboxing backend fences the edit by it, the bare backend ignores it. Omit to leave the backend its own default.' }],
         returns: 'the outcome, including the version the edit produced.',
+      },
+    ],
+  },
+  {
+    key: 'games',
+    summary: 'Dynamic registry of local companion-game Providers and their immutable assets.',
+    description: 'Dynamic registry of local companion-game Providers and their immutable assets.',
+    methods: [
+      {
+        signature: 'register(game: GameRegistration): () => void',
+        description: 'Register one borrowed game contribution for the calling plugin fiber. Duplicate ids throw before mutation. Disposal removes the exact entry and makes its content digest unreadable to new Desktop protocol requests.',
+        parameters: [{ name: 'game', description: 'validated metadata and complete text assets.' }],
+        returns: 'disposer for the exact registration.',
+      },
+      {
+        signature: 'list(): GameDescriptor[]',
+        description: 'List every currently registered game in stable id order.',
+        parameters: [],
+        returns: 'sorted game metadata.',
+      },
+      {
+        signature: 'get(id: GameId): GameDescriptor | undefined',
+        description: 'Resolve one current game by its stable id.',
+        parameters: [{ name: 'id', description: 'validated stable game selector.' }],
+        returns: 'current descriptor, or undefined without a matching Provider.',
+      },
+      {
+        signature: 'readAsset(assetId: GameAssetId, path: string): GameAsset | undefined',
+        description: 'Read one asset after the private wire parser validates its digest and path.',
+        parameters: [{ name: 'assetId', description: 'content digest minted by this registry.' }, { name: 'path', description: 'normalized relative asset path.' }],
+        returns: 'asset bytes and media type, or undefined after disposal or for an unknown path.',
       },
     ],
   },
@@ -2440,6 +2476,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'target', description: 'the resolved target about to be written.' }, { name: 'actor', description: 'the opaque tool-execution context the decider keys off.' }],
   },
   {
+    name: 'games/change',
+    mode: 'emit',
+    signature: '\'games/change\'(change: GameRegistryChange): void',
+    summary: 'A game Provider registration changed after the registry commit point.',
+    description: 'A game Provider registration changed after the registry commit point.',
+    parameters: [{ name: 'change', description: 'exact game and committed mutation.' }],
+  },
+  {
     name: 'goal/changed',
     mode: 'emit',
     signature: '\'goal/changed\'(this: import(\'@deepseek-ai/dsh-scope\').Scoped<Agent>, payload: { agent: Agent; change: GoalChanged }): void',
@@ -3000,6 +3044,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DesktopApplicationMetadata {\n    name: string;\n    version: string;\n    identifier: string;\n}',
   },
   {
+    name: 'DesktopGameCompanion',
+    declaration: 'export interface DesktopGameCompanion {\n    url: string;\n    title: string;\n    mode: \'hidden\' | \'playable\' | \'attention\';\n    activeAgentCount: number;\n    reason?: \'work-complete\' | \'approval\';\n}',
+  },
+  {
     name: 'DesktopMediaCompanion',
     declaration: 'export interface DesktopMediaCompanion {\n    url: string;\n    active: boolean;\n}',
   },
@@ -3174,6 +3222,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FsWriteOutcome',
     declaration: 'export interface FsWriteOutcome {\n    operation: \'create\' | \'update\';\n    version: FsVersion;\n    before: string | null;\n    after: string;\n}',
+  },
+  {
+    name: 'GameAsset',
+    declaration: 'export interface GameAsset {\n    readonly contentType: GameAssetRegistration[\'contentType\'];\n    readonly body: string;\n}',
+  },
+  {
+    name: 'GameAssetId',
+    declaration: 'export type GameAssetId = Branded<\'GameAssetId\'>;',
+  },
+  {
+    name: 'GameAssetRegistration',
+    declaration: 'export interface GameAssetRegistration {\n    readonly path: string;\n    readonly contentType: \'text/css; charset=utf-8\' | \'text/html; charset=utf-8\' | \'text/javascript; charset=utf-8\';\n    readonly body: string;\n}',
+  },
+  {
+    name: 'GameDescriptor',
+    declaration: 'export interface GameDescriptor {\n    readonly id: GameId;\n    readonly title: string;\n    readonly assetId: GameAssetId;\n    readonly url: string;\n}',
+  },
+  {
+    name: 'GameId',
+    declaration: 'export type GameId = Branded<\'GameId\'>;',
+  },
+  {
+    name: 'GameRegistration',
+    declaration: 'export interface GameRegistration {\n    readonly id: GameId;\n    readonly title: string;\n    readonly assets: readonly GameAssetRegistration[];\n}',
+  },
+  {
+    name: 'GameRegistryChange',
+    declaration: 'export interface GameRegistryChange {\n    readonly id: GameId;\n    readonly kind: \'registered\' | \'removed\';\n}',
   },
   {
     name: 'GenerateOptions',

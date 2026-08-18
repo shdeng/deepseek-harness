@@ -642,6 +642,31 @@ export type Config = LocalConfig
 
 来源：[`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-game-companion"></a>
+
+## `@deepseek-ai/dsh-game-companion`
+
+需要：`agents` · `desktopNative` · `games`
+
+```ts config-catalog
+/** Selected game and bounded native-request configuration. */
+export interface Config {
+  /** Exclusive companion selected for this Desktop Host. */
+  mode?: CompanionMode
+  /** Stable id of the game Provider to present. */
+  gameId?: string
+  /** Bilibili page opened by the media companion. */
+  videoUrl?: string
+  /** Maximum duration of each native window reconciliation request. */
+  nativeTimeoutMs?: number
+}
+
+/** Exclusive Desktop companion selection. */
+export type CompanionMode = 'off' | 'bilibili' | 'game'
+```
+
+来源：[`packages/host/game-companion/src/index.ts:27`](../packages/host/game-companion/src/index.ts)
+
 <a id="deepseek-aidsh-goal"></a>
 
 ## `@deepseek-ai/dsh-goal`
@@ -3086,6 +3111,8 @@ export interface Config {
 - `@deepseek-ai/dsh-credentials-system` — 需要 `desktopNative`（[`packages/credentials/credentials-system/src/index.ts`](../packages/credentials/credentials-system/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
+- `@deepseek-ai/dsh-game`（[`packages/host/game/src/index.ts`](../packages/host/game/src/index.ts)）
+- `@deepseek-ai/dsh-game-2048` — 需要 `games`（[`packages/host/game-2048/src/index.ts`](../packages/host/game-2048/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-auto` — 需要 `webServer` · `loader`（[`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-desktop` — 需要 `desktopNative`（[`packages/host/directory-picker-desktop/src/index.ts`](../packages/host/directory-picker-desktop/src/index.ts)）

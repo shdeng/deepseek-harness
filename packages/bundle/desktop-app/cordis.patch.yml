@@ -14,3 +14,14 @@
 - insert:
     - id: credentials-system
       name: '@deepseek-ai/dsh-credentials-system'
+
+    - id: games
+      name: '@deepseek-ai/dsh-game'
+
+    - id: game-2048
+      name: '@deepseek-ai/dsh-game-2048'
+
+    - id: companion
+      name: '@deepseek-ai/dsh-game-companion'
+      config:
+        mode: off

@@ -20,8 +20,9 @@ use std::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use command_group::{CommandGroup, GroupChild};
 use ipc::{
-    validate_asset_digest, validate_media_url, webview_boot_manifest, DesktopRequest,
-    NativeRequest, ProtocolLine, SidecarBridge,
+    validate_asset_digest, validate_game_asset_path, validate_game_url, validate_media_url,
+    webview_boot_manifest, DesktopRequest, GameAttentionReason, GameCompanionMode, NativeRequest,
+    ProtocolLine, SidecarBridge,
 };
 use tauri::{
     http,
@@ -53,6 +54,7 @@ window.__DSH_DESKTOP_IPC__ = true;
 })();
 "#;
 const MEDIA_WINDOW_LABEL: &str = "bilibili-companion";
+const GAME_WINDOW_LABEL: &str = "game-companion";
 const MEDIA_INITIALIZATION_SCRIPT: &str = r#"
 (() => {
   window.__DSH_MEDIA_PLAYING__ = false;
@@ -71,6 +73,15 @@ const MEDIA_INITIALIZATION_SCRIPT: &str = r#"
   };
   document.addEventListener('DOMContentLoaded', apply, { once: true });
   new MutationObserver(apply).observe(document.documentElement, { childList: true, subtree: true });
+})();
+"#;
+const GAME_INITIALIZATION_SCRIPT: &str = r#"
+(() => {
+  window.__DSH_GAME_STATE__ = { mode: 'hidden', activeAgentCount: 0 };
+  window.__DSH_GAME_SET_STATE__ = (state) => {
+    window.__DSH_GAME_STATE__ = Object.freeze({ ...state });
+    document.dispatchEvent(new CustomEvent('dsh-game-state', { detail: window.__DSH_GAME_STATE__ }));
+  };
 })();
 "#;
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -397,6 +408,33 @@ struct MediaCompanionRuntime {
     desired: Mutex<MediaCompanionDesired>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct GameCompanionDesired {
+    configured_url: Option<Url>,
+    title: String,
+    mode: GameCompanionMode,
+    active_agent_count: u32,
+    reason: Option<GameAttentionReason>,
+}
+
+impl Default for GameCompanionDesired {
+    fn default() -> Self {
+        Self {
+            configured_url: None,
+            title: String::new(),
+            mode: GameCompanionMode::Hidden,
+            active_agent_count: 0,
+            reason: None,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct GameCompanionRuntime {
+    operation: Mutex<()>,
+    desired: Mutex<GameCompanionDesired>,
+}
+
 fn media_navigation_allowed(url: &Url) -> bool {
     url.as_str() == "about:blank" || validate_media_url(url.as_str()).is_ok()
 }
@@ -540,6 +578,197 @@ fn reconcile_media_companion(app: &tauri::AppHandle, url: Url, active: bool) -> 
         .map_err(|_| "Bilibili companion update ended without a result".to_owned())?
 }
 
+fn game_navigation_allowed(url: &Url) -> bool {
+    if url.as_str() == "about:blank" {
+        return true;
+    }
+    if url.scheme() == "dsh-game" {
+        return validate_game_url(url.as_str()).is_ok();
+    }
+    if url.scheme() == "http" && url.host_str() == Some("dsh-game.localhost") {
+        let local = format!("dsh-game://localhost{}", url.path());
+        return validate_game_url(&local).is_ok();
+    }
+    false
+}
+
+fn game_return_navigation(url: &Url) -> bool {
+    let path = if url.scheme() == "dsh-game" && url.host_str() == Some("localhost") {
+        url.path()
+    } else if url.scheme() == "http" && url.host_str() == Some("dsh-game.localhost") {
+        url.path()
+    } else {
+        return false;
+    };
+    let Some((digest, action)) = path.strip_prefix('/').and_then(|path| path.split_once('/'))
+    else {
+        return false;
+    };
+    validate_asset_digest(digest).is_ok() && action == "return-to-harness"
+}
+
+fn game_webview_url(url: &Url) -> Result<Url, String> {
+    if cfg!(any(target_os = "windows", target_os = "android")) {
+        return Url::parse(&format!("http://dsh-game.localhost{}", url.path()))
+            .map_err(|error| format!("failed to map game companion URL: {error}"));
+    }
+    Ok(url.clone())
+}
+
+fn game_state_script(desired: &GameCompanionDesired) -> String {
+    let mode = match desired.mode {
+        GameCompanionMode::Hidden => "hidden",
+        GameCompanionMode::Playable => "playable",
+        GameCompanionMode::Attention => "attention",
+    };
+    let reason = desired.reason.map(|reason| match reason {
+        GameAttentionReason::WorkComplete => "work-complete",
+        GameAttentionReason::Approval => "approval",
+    });
+    let state = serde_json::json!({
+        "mode": mode,
+        "activeAgentCount": desired.active_agent_count,
+        "reason": reason,
+    });
+    format!("window.__DSH_GAME_SET_STATE__?.({state});")
+}
+
+fn apply_game_state(window: &WebviewWindow, desired: &GameCompanionDesired) -> Result<(), String> {
+    window
+        .eval(game_state_script(desired))
+        .map_err(|error| format!("failed to update game companion state: {error}"))
+}
+
+fn build_game_window(
+    app: &tauri::AppHandle,
+    runtime: Arc<GameCompanionRuntime>,
+    url: &Url,
+    title: &str,
+) -> Result<WebviewWindow, String> {
+    let page_runtime = Arc::clone(&runtime);
+    let navigation_app = app.clone();
+    WebviewWindowBuilder::new(
+        app,
+        GAME_WINDOW_LABEL,
+        WebviewUrl::External(game_webview_url(url)?),
+    )
+    .initialization_script(GAME_INITIALIZATION_SCRIPT)
+    .title(format!("{title} — DeepSeek Harness"))
+    .inner_size(620.0, 760.0)
+    .min_inner_size(380.0, 620.0)
+    .visible(false)
+    .on_navigation(move |url| {
+        if !game_return_navigation(url) {
+            return game_navigation_allowed(url);
+        }
+        if let Some(game) = navigation_app.get_webview_window(GAME_WINDOW_LABEL) {
+            let _ = game.hide();
+        }
+        if let Some(main) = navigation_app.get_webview_window("main") {
+            let _ = main.show().and_then(|()| main.set_focus());
+        }
+        false
+    })
+    .on_new_window(|_url, _features| NewWindowResponse::Deny)
+    .on_page_load(move |window, payload| {
+        if matches!(payload.event(), PageLoadEvent::Finished) {
+            let desired = page_runtime
+                .desired
+                .lock()
+                .expect("game companion state lock poisoned")
+                .clone();
+            let _ = apply_game_state(&window, &desired);
+        }
+    })
+    .on_download(|_webview, _event| false)
+    .build()
+    .map_err(|error| format!("failed to create game companion window: {error}"))
+}
+
+fn reconcile_game_on_main(
+    app: &tauri::AppHandle,
+    runtime: &Arc<GameCompanionRuntime>,
+    desired: GameCompanionDesired,
+) -> Result<(), String> {
+    let url = desired
+        .configured_url
+        .clone()
+        .ok_or_else(|| "game companion desired state has no URL".to_owned())?;
+    let previous = {
+        let mut state = runtime
+            .desired
+            .lock()
+            .expect("game companion state lock poisoned");
+        std::mem::replace(&mut *state, desired.clone())
+    };
+    let result = (|| {
+        let window = match app.get_webview_window(GAME_WINDOW_LABEL) {
+            Some(window) => {
+                if previous.configured_url.as_ref() != Some(&url) {
+                    window
+                        .navigate(game_webview_url(&url)?)
+                        .map_err(|error| format!("failed to navigate game companion: {error}"))?;
+                }
+                window
+                    .set_title(&format!("{} — DeepSeek Harness", desired.title))
+                    .map_err(|error| format!("failed to title game companion: {error}"))?;
+                window
+            }
+            None => build_game_window(app, Arc::clone(runtime), &url, &desired.title)?,
+        };
+        apply_game_state(&window, &desired)?;
+        match desired.mode {
+            GameCompanionMode::Hidden => window
+                .hide()
+                .map_err(|error| format!("failed to hide game companion: {error}")),
+            GameCompanionMode::Playable | GameCompanionMode::Attention => window
+                .unminimize()
+                .and_then(|()| window.show())
+                .and_then(|()| window.set_focus())
+                .map_err(|error| format!("failed to show game companion: {error}")),
+        }
+    })();
+    if result.is_err() {
+        *runtime
+            .desired
+            .lock()
+            .expect("game companion state lock poisoned") = previous;
+    }
+    result
+}
+
+fn reconcile_game_companion(
+    app: &tauri::AppHandle,
+    url: Url,
+    title: String,
+    mode: GameCompanionMode,
+    active_agent_count: u32,
+    reason: Option<GameAttentionReason>,
+) -> Result<(), String> {
+    let runtime = app.state::<Arc<GameCompanionRuntime>>().inner().clone();
+    let _operation = runtime
+        .operation
+        .lock()
+        .expect("game companion operation lock poisoned");
+    let desired = GameCompanionDesired {
+        configured_url: Some(url),
+        title,
+        mode,
+        active_agent_count,
+        reason,
+    };
+    let task_app = app.clone();
+    let task_runtime = Arc::clone(&runtime);
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let _ = sender.send(reconcile_game_on_main(&task_app, &task_runtime, desired));
+    })
+    .map_err(|error| format!("failed to schedule game companion update: {error}"))?;
+    receiver
+        .recv()
+        .map_err(|_| "game companion update ended without a result".to_owned())?
+}
+
 #[derive(Clone, Debug)]
 enum BootStatus {
     Starting,
@@ -626,6 +855,25 @@ impl HostState {
                                             let result =
                                                 reconcile_media_companion(&native_app, url, active)
                                                     .map(|()| serde_json::Value::Null);
+                                            (id, result)
+                                        }
+                                        NativeRequest::GameCompanion {
+                                            id,
+                                            url,
+                                            title,
+                                            mode,
+                                            active_agent_count,
+                                            reason,
+                                        } => {
+                                            let result = reconcile_game_companion(
+                                                &native_app,
+                                                url,
+                                                title,
+                                                mode,
+                                                active_agent_count,
+                                                reason,
+                                            )
+                                            .map(|()| serde_json::Value::Null);
                                             (id, result)
                                         }
                                         NativeRequest::Metadata { id } => {
@@ -885,6 +1133,57 @@ async fn read_protocol_asset(
             window_label,
         )
         .await;
+    asset_protocol_response(result)
+}
+
+async fn read_game_protocol_asset(
+    host: Arc<HostState>,
+    window_label: String,
+    uri: http::Uri,
+) -> http::Response<Vec<u8>> {
+    if !matches!(uri.host(), Some("localhost" | "dsh-game.localhost")) {
+        return protocol_error(
+            http::StatusCode::FORBIDDEN,
+            b"unauthorized game asset authority".to_vec(),
+        );
+    }
+    let Some(path) = uri.path().strip_prefix('/') else {
+        return protocol_error(
+            http::StatusCode::NOT_FOUND,
+            b"game asset not found".to_vec(),
+        );
+    };
+    let Some((asset, path)) = path.split_once('/') else {
+        return protocol_error(
+            http::StatusCode::NOT_FOUND,
+            b"game asset not found".to_vec(),
+        );
+    };
+    if validate_asset_digest(asset).is_err() || validate_game_asset_path(path).is_err() {
+        return protocol_error(
+            http::StatusCode::NOT_FOUND,
+            b"game asset not found".to_vec(),
+        );
+    }
+    let id = format!(
+        "game-asset-{}",
+        ASSET_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    );
+    let result = host
+        .bridge
+        .request(
+            DesktopRequest::GameAssetRead {
+                id,
+                asset: asset.to_owned(),
+                path: path.to_owned(),
+            },
+            window_label,
+        )
+        .await;
+    asset_protocol_response(result)
+}
+
+fn asset_protocol_response(result: Result<serde_json::Value, String>) -> http::Response<Vec<u8>> {
     let Ok(result) = result else {
         return protocol_error(
             http::StatusCode::BAD_GATEWAY,
@@ -1059,6 +1358,7 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .manage(Arc::new(MediaCompanionRuntime::default()))
+        .manage(Arc::new(GameCompanionRuntime::default()))
         .register_asynchronous_uri_scheme_protocol("dsh-plugin", |context, request, responder| {
             let host = context
                 .app_handle()
@@ -1069,6 +1369,18 @@ fn main() {
             let uri = request.uri().clone();
             tauri::async_runtime::spawn(async move {
                 responder.respond(read_protocol_asset(host, window_label, uri).await);
+            });
+        })
+        .register_asynchronous_uri_scheme_protocol("dsh-game", |context, request, responder| {
+            let host = context
+                .app_handle()
+                .state::<Arc<HostState>>()
+                .inner()
+                .clone();
+            let window_label = context.webview_label().to_owned();
+            let uri = request.uri().clone();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(read_game_protocol_asset(host, window_label, uri).await);
             });
         })
         .plugin(tauri_plugin_dialog::init())
@@ -1102,6 +1414,11 @@ fn main() {
         } => {
             if let Err(error) = host.bridge.cancel_window(&label) {
                 eprintln!("[dsh-desktop] failed to cancel streams for closed window: {error}");
+            }
+            if label == GAME_WINDOW_LABEL {
+                if let Some(main) = _app.get_webview_window("main") {
+                    let _ = main.show().and_then(|()| main.set_focus());
+                }
             }
         }
         RunEvent::ExitRequested { .. } => host.shutdown(),
@@ -1184,6 +1501,35 @@ mod tests {
     }
 
     #[test]
+    fn game_navigation_and_state_are_closed_to_local_assets() {
+        let digest = "a".repeat(64);
+        assert!(game_navigation_allowed(
+            &Url::parse(&format!("dsh-game://localhost/{digest}/index.html")).unwrap()
+        ));
+        assert!(game_navigation_allowed(
+            &Url::parse(&format!("http://dsh-game.localhost/{digest}/index.html")).unwrap()
+        ));
+        assert!(!game_navigation_allowed(
+            &Url::parse("https://example.com/game").unwrap()
+        ));
+        assert!(game_return_navigation(
+            &Url::parse(&format!("dsh-game://localhost/{digest}/return-to-harness")).unwrap()
+        ));
+        let desired = GameCompanionDesired {
+            configured_url: Some(
+                Url::parse(&format!("dsh-game://localhost/{digest}/index.html")).unwrap(),
+            ),
+            title: "2048".to_owned(),
+            mode: GameCompanionMode::Attention,
+            active_agent_count: 0,
+            reason: Some(GameAttentionReason::WorkComplete),
+        };
+        let script = game_state_script(&desired);
+        assert!(script.contains("attention"));
+        assert!(script.contains("work-complete"));
+    }
+
+    #[test]
     fn deep_links_accept_only_the_registered_session_url() {
         assert_eq!(
             deep_link_session_id(&Url::parse("deepseek-harness://session/session-1234").unwrap()),
@@ -1227,7 +1573,7 @@ mod tests {
         assert_eq!(
             config["app"]["security"]["capabilities"][0]["windows"],
             serde_json::json!(["main"]),
-            "the remote media WebView must not receive the main-window IPC capability"
+            "the media and game WebViews must not receive the main-window IPC capability"
         );
     }
 

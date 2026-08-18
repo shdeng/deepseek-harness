@@ -9,6 +9,7 @@ import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
+import { CompanionCardController, type CompanionSettings } from '../src/client/companion-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
 function acceptWrites<T>(host: StubSettingsScope<T>): void {
@@ -32,6 +33,18 @@ function credentialsApi(configured: boolean) {
   const set = vi.fn(() => Promise.resolve({ rpcId: 'c-2' as never, result: { ok: true as const, value: {} } }))
   return { api: { credentials: { describe, set } } as never, describe, set }
 }
+
+describe('CompanionCardController', () => {
+  it('projects and saves the selected mode', async () => {
+    const host = stubSettingsScope<CompanionSettings>()
+    host.publish({ status: 'ready', writable: true, value: { mode: 'off' }, base: { mode: 'off' }, user: {} })
+    acceptWrites(host)
+    const face = new CompanionCardController(host.scope).inject()
+    face.edit('mode', 'game')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('mode', 'game') })
+  })
+})
 
 describe('CardForm', () => {
   function form() {

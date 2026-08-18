@@ -34,6 +34,20 @@ export interface DesktopMediaCompanion {
   active: boolean
 }
 
+/** Complete desired state of the isolated Desktop game window. */
+export interface DesktopGameCompanion {
+  /** Content-addressed `dsh-game` entry URL minted by the game registry. */
+  url: string
+  /** Bounded title of the selected local game. */
+  title: string
+  /** Hidden, human-playable, or attention-blocked presentation state. */
+  mode: 'hidden' | 'playable' | 'attention'
+  /** Current aggregate count displayed by the game while play is enabled. */
+  activeAgentCount: number
+  /** Why an attention overlay blocks play. */
+  reason?: 'work-complete' | 'approval'
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
@@ -89,6 +103,13 @@ export abstract class DesktopNative extends Service {
    * @param signal - caller lifetime; abort discards any later completion.
    */
   abstract setMediaCompanion(companion: DesktopMediaCompanion, signal: AbortSignal): Promise<void>
+
+  /**
+   * Reconcile the isolated local-game WebView with one complete presentation intent.
+   * @param companion - content-addressed game entry and complete desired UI state.
+   * @param signal - caller lifetime; abort discards any later completion.
+   */
+  abstract setGameCompanion(companion: DesktopGameCompanion, signal: AbortSignal): Promise<void>
 
   /**
    * Read metadata from the running desktop package.

@@ -11,13 +11,13 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import AgentRegistry, { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import DesktopNative from '@deepseek-ai/dsh-host-desktop-native'
 import type {
-  DesktopApplicationMetadata, DesktopMediaCompanion, DesktopNotification,
+  DesktopApplicationMetadata, DesktopGameCompanion, DesktopMediaCompanion, DesktopNotification,
 } from '@deepseek-ai/dsh-host-desktop-native'
 import * as bilibiliCompanion from '../src/index.ts'
 
 class FakeDesktopNative extends DesktopNative {
   readonly media: DesktopMediaCompanion[] = []
-  failureOnce: unknown
+  failureOnce: Error | string | undefined
   private deferred: PromiseWithResolvers<undefined> | undefined
 
   deferNext(): PromiseWithResolvers<undefined> {
@@ -38,17 +38,21 @@ class FakeDesktopNative extends DesktopNative {
     if (this.failureOnce !== undefined) {
       const failure = this.failureOnce
       this.failureOnce = undefined
-      return Promise.reject(failure)
+      return Promise.reject(failure instanceof Error ? failure : new Error(failure))
     }
     const deferred = this.deferred
     if (deferred !== undefined) {
       this.deferred = undefined
-      const abort = (): void => { deferred.reject(signal.reason) }
+      const abort = (): void => {
+        deferred.reject(signal.reason instanceof Error ? signal.reason : new Error('native request aborted'))
+      }
       signal.addEventListener('abort', abort, { once: true })
       return deferred.promise.finally(() => { signal.removeEventListener('abort', abort) })
     }
     return Promise.resolve()
   }
+
+  override setGameCompanion(_companion: DesktopGameCompanion): Promise<void> { return Promise.resolve() }
 }
 
 interface Mounted {

@@ -15,6 +15,9 @@ The host side of the dsh web GUI plus opt-in integrations that control host-loca
 | [`directory-picker-auto/`](directory-picker-auto/README.md) | Host-adaptive picker composition | mounts a backend |
 | [`plugin-inventory/`](plugin-inventory/README.md) | Read-only projection of current Loader entries | Remote `pluginInventory/list` |
 | [`bilibili-companion/`](bilibili-companion/README.md) | Agent-activity-driven Bilibili playback and window control | consumes `ctx.agents` |
+| [`game/`](game/README.md) | Content-addressed companion-game Provider registry | `ctx.games` |
+| [`game-2048/`](game-2048/README.md) | Local accessible 2048 game Provider | registers `ctx.games` |
+| [`game-companion/`](game-companion/README.md) | Exclusive Bilibili/game companion selection | consumes `ctx.agents` and `ctx.games` |
 
 `apiproxy` remains transport-independent; [`client/connection`](../client/connection/README.md) supplies the browser/HTTP carrier. Picker implementations replace one another behind the shared seam.
 

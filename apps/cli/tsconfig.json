@@ -45,6 +45,9 @@
       "path": "../../packages/host/desktop-native"
     },
     {
+      "path": "../../packages/host/game"
+    },
+    {
       "path": "../../packages/credentials/credentials"
     },
     {

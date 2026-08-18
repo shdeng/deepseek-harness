@@ -87,6 +87,20 @@ export function ValueField(props: FieldProps & {
   )
 }
 
+/** A staged closed-choice field. */
+export function SelectField(props: FieldProps & { options: readonly { value: string; label: string }[] }) {
+  return (
+    <div className={css.field}>
+      <label className={css.label} htmlFor={props.id}>{props.label}</label>
+      <select id={props.id} className={css.input} value={props.text} disabled={props.disabled}
+        onChange={(event) => { props.onEdit(event.target.value) }}>
+        {props.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <p className={css.hint}>{props.hint}</p>
+    </div>
+  )
+}
+
 /**
  * A write-only credential control. The value never rides a response, so the
  * control reports only whether one is configured and starts blank; a blank

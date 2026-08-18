@@ -11,6 +11,8 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
+  | 'companionTitle' | 'companionDescription' | 'companionMode' | 'companionModeHint'
+  | 'companionOff' | 'companionBilibili' | 'companionGame'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -51,6 +53,9 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
+  companionTitle: 'Desktop companion', companionDescription: 'Choose what appears while the agent works.',
+  companionMode: 'Companion', companionModeHint: 'Only one companion can be active.',
+  companionOff: 'Off', companionBilibili: 'Bilibili', companionGame: '2048',
 }
 
 /** Simplified Chinese copy. */
@@ -92,4 +97,7 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
+  companionTitle: '桌面 Companion', companionDescription: '选择 agent 工作时显示的内容。',
+  companionMode: 'Companion', companionModeHint: '同一时间只能启用一种。',
+  companionOff: '关闭', companionBilibili: 'Bilibili', companionGame: '2048',
 }

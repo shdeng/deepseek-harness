@@ -42,6 +42,20 @@ describe('desktop sidecar protocol', () => {
     }))).toThrow(/64-character lowercase hex digest/)
   })
 
+  it('accepts only content-addressed normalized game assets', () => {
+    const asset = 'b'.repeat(64)
+    expect(parseDesktopFrame(frame({
+      v: 1,
+      kind: 'request',
+      request: { op: 'game-asset-read', id: 'game-asset-1', asset, path: 'game.js' },
+    }))).toMatchObject({ request: { op: 'game-asset-read', asset, path: 'game.js' } })
+    expect(() => parseDesktopFrame(frame({
+      v: 1,
+      kind: 'request',
+      request: { op: 'game-asset-read', id: 'game-asset-1', asset, path: '../secret' },
+    }))).toThrow(/normalized lowercase relative text/)
+  })
+
   it('rejects missing versions, remote paths, and invalid ids', () => {
     expect(() => parseDesktopFrame('{}')).toThrow(/prefix/)
     expect(() => parseDesktopFrame(frame({ kind: 'cancel', id: 'request-1' }))).toThrow(/version 1/)
@@ -138,6 +152,29 @@ describe('desktop sidecar protocol', () => {
         url: 'https://www.bilibili.com/video/BV1x',
         active: true,
       },
+    })
+    channel.handle({ v: 1, kind: 'native-response', id: 'native-1', result: null })
+    await expect(pending).resolves.toBeNull()
+  })
+
+  it('carries one complete game presentation intent to the Rust shell', async () => {
+    const channel = new DesktopNativeChannel()
+    const sent: Record<string, unknown>[] = []
+    channel.install((outbound) => {
+      sent.push(outbound)
+      return Promise.resolve()
+    })
+    const pending = channel.request({
+      op: 'game-companion',
+      url: `dsh-game://localhost/${'a'.repeat(64)}/index.html`,
+      title: '2048',
+      mode: 'attention',
+      activeAgentCount: 0,
+      reason: 'work-complete',
+    }, new AbortController().signal)
+    expect(sent[0]).toMatchObject({
+      kind: 'native-request',
+      request: { op: 'game-companion', title: '2048', mode: 'attention', reason: 'work-complete' },
     })
     channel.handle({ v: 1, kind: 'native-response', id: 'native-1', result: null })
     await expect(pending).resolves.toBeNull()
